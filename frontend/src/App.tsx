@@ -1,5 +1,5 @@
-import { AuthProvider } from './presentation/context/AuthContext'
-import { LocalBridgeRouter } from './presentation/routes/router'
+import { AuthProvider } from '@/presentation/context/auth'
+import { LocalBridgeRouter } from '@/presentation/routes/router'
 
 function App() {
   return (

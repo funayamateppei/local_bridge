@@ -1,14 +1,6 @@
-import { createContext, useEffect, useState, type ReactNode } from 'react'
-import { db } from '../../infrastructure/db'
-
-interface AuthContextType {
-  isAuthenticated: boolean
-  isLoading: boolean
-  login: (token: string) => Promise<void>
-  logout: () => Promise<void>
-}
-
-export const AuthContext = createContext<AuthContextType | undefined>(undefined)
+import { useEffect, useState, type ReactNode } from 'react'
+import { db } from '@/infrastructure/db'
+import { AuthContext } from './context'
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false)

@@ -37,6 +37,14 @@ description: Global Coding Guidelines
 - **Features vs Components**:
   - **`features/`**: 特定の機能に紐づく UI（例: `LoginView`, `HomeView`）。機能単位でディレクトリを分けます。
   - **`components/`**: 汎用的な再利用可能な部品（例: `Button`, `Input`, `Card`）。プロジェクト全体で使い回せるもの。
+- **Export Management**:
+  - 各ディレクトリに `index.ts` を配置し、必要なもののみを明示的にエクスポートします。
+  - 外部からは `index.ts` 経由でのみインポートし、内部実装の詳細を隠蔽します。
+  - 例: `import { AuthProvider } from './context/auth'` （`auth/index.ts`からエクスポート）
+- **Import Paths**:
+  - `@/` エイリアスを使用して、`src` 配下のファイルを絶対パスでインポートします。
+  - 例: `import { useAuth } from '@/presentation/hooks/auth'`
+  - 相対パス（`../../`）は使用しません。
 
 ### State Management
 

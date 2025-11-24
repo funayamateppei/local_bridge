@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../../hooks/useAuth'
-import { Routing } from '../../routes/routing'
-import { LoginView } from '../../features/login/LoginView'
+import { useAuth } from '@/presentation/hooks/auth'
+import { Routing } from '@/presentation/routes/routing'
+import { LoginView } from '@/presentation/features/login/LoginView'
 
 export const Page = () => {
   const [isLoading, setIsLoading] = useState(false)

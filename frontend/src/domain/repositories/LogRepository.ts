@@ -1,4 +1,4 @@
-import { Log } from '../entities/Log'
+import type { Log } from '../entities'
 
 export interface LogRepository {
   save(log: Log): Promise<void>
