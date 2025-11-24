@@ -5,6 +5,7 @@ description: Global Coding Guidelines
 # Coding Guidelines
 
 コード生成および修正タスクにおいては、以下のガイドラインを必ず遵守してください。
+このファイルは**日本語**で記述し、維持してください。
 
 ## 1. General Principles (基本原則)
 
@@ -29,12 +30,25 @@ description: Global Coding Guidelines
 - **Functional Components**: 全て関数コンポーネントを使用します。
 - **Named Exports**: 遅延ロードされるページを除き、デフォルトエクスポートではなく名前付きエクスポート（例: `export const Button = ...`）を使用します。
 - **Props Interface**: プロパティはコンポーネントの直上で `interface` を使用して定義します。
+- **Pages**:
+  - ページコンポーネントは `src/presentation/pages` に配置し、ルート構造を反映させます（例: `pages/login/page.tsx`）。
+  - **責務**: ルーティングロジック（遷移、パラメータ取得）とデータ取得のみを担当します。
+  - **UI**: 描画処理は `src/presentation/features` 内の View コンポーネントに委譲します。
+- **Features vs Components**:
+  - **`features/`**: 特定の機能に紐づく UI（例: `LoginView`, `HomeView`）。機能単位でディレクトリを分けます。
+  - **`components/`**: 汎用的な再利用可能な部品（例: `Button`, `Input`, `Card`）。プロジェクト全体で使い回せるもの。
 
 ### State Management
 
 - **Local State**: UI 固有の状態には `useState` を使用します。
 - **Global State**: グローバルな状態管理には **Zustand** を使用します。
 - **Data Fetching**: データ取得ロジックはカスタムフックまたはリポジトリ実装内にカプセル化します。コンポーネント内で直接データを取得しないでください。
+
+### Routing
+
+- **Type Safety**: ルート定義は `Routing` オブジェクトで行い、型安全性を確保します。
+- **Usage**: 定義には `Routing.Path.to.Screen.path` を使用し、パラメータ付き遷移には `Routing.Path.to.Screen.path.replace(...)` を使用します。
+- **Structure**: URL 構造を反映するようにルート定義をネストさせます。
 
 ### Styling (CSS)
 

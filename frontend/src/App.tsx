@@ -1,16 +1,11 @@
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
-import { MainLayout } from './presentation/layouts/MainLayout'
-import { HomePage } from './presentation/pages/HomePage'
+import { AuthProvider } from './presentation/context/AuthContext'
+import { LocalBridgeRouter } from './presentation/routes/router'
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<MainLayout />}>
-          <Route index element={<HomePage />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <AuthProvider>
+      <LocalBridgeRouter />
+    </AuthProvider>
   )
 }
 
