@@ -7,20 +7,51 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
-data class LoginRequest(val username: String)
+data class LoginRequest(val username: String, val password: String? = null)
 data class AuthResponse(val token: String)
 
 @RestController
 @RequestMapping("/api/auth")
 class AuthController(
-    private val jwtTokenProvider: JwtTokenProvider
+    private val jwtTokenProvider: JwtTokenProvider,
+    private val userRepository: com.localbridge.backend.repository.UserRepository,
+    private val passwordEncoder: org.springframework.security.crypto.password.PasswordEncoder
 ) {
 
     @PostMapping("/login")
     fun login(@RequestBody request: LoginRequest): ResponseEntity<AuthResponse> {
-        // In a real app, validate username/password here.
-        // For demo, we accept any username and issue a token.
-        val token = jwtTokenProvider.createToken(request.username)
+        // DB からユーザーを検索
+        val user = userRepository.findByUsername(request.username)
+            ?: return ResponseEntity.status(401).build()
+        
+        // パスワード検証
+        if (!passwordEncoder.matches(request.password ?: "", user.passwordHash)) {
+            return ResponseEntity.status(401).build()
+        }
+        
+        val token = jwtTokenProvider.createToken(user.username)
+        return ResponseEntity.ok(AuthResponse(token))
+    }
+
+    @PostMapping("/register")
+    fun register(@RequestBody request: LoginRequest): ResponseEntity<AuthResponse> {
+        // ユーザー名の重複チェック
+        if (userRepository.findByUsername(request.username) != null) {
+            return ResponseEntity.status(409).build() // 409 Conflict
+        }
+        
+        // パスワードのハッシュ化
+        val passwordHash = passwordEncoder.encode(request.password ?: "")
+        
+        // ユーザーを DB に保存
+        val newUser = com.localbridge.backend.entity.User(
+            username = request.username,
+            passwordHash = passwordHash
+        )
+        userRepository.save(newUser)
+        
+        // JWT トークンを発行
+        val token = jwtTokenProvider.createToken(newUser.username)
         return ResponseEntity.ok(AuthResponse(token))
     }
 }

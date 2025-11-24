@@ -2,6 +2,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import { MainLayout } from '@/presentation/layouts/MainLayout'
 import { pages } from '@/presentation/pages'
 import { Routing } from '@/presentation/routes/routing'
+import { ProtectedRoute } from './ProtectedRoute'
 
 const router = createBrowserRouter(
   [
@@ -10,8 +11,16 @@ const router = createBrowserRouter(
       element: <pages.login.Page />,
     },
     {
+      path: Routing.Register.path,
+      element: <pages.register.Page />,
+    },
+    {
       path: Routing.Root.path,
-      element: <MainLayout />,
+      element: (
+        <ProtectedRoute>
+          <MainLayout />
+        </ProtectedRoute>
+      ),
       children: [
         {
           index: true,

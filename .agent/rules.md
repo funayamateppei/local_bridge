@@ -48,6 +48,12 @@ description: Global Coding Guidelines
 
 ### State Management
 
+## Database Migration
+
+- **マイグレーションファイルは必ずコマンドで作成してください**（`./gradlew flywayCreate -PmigrationDesc=...`）。
+- 手動でのファイル作成（`touch` 等）は禁止です。これは命名規則を統一するためです。
+- 詳細な手順については `backend/README.md` を参照してください。
+
 - **Local State**: UI 固有の状態には `useState` を使用します。
 - **Global State**: グローバルな状態管理には **Zustand** を使用します。
 - **Data Fetching**: データ取得ロジックはカスタムフックまたはリポジトリ実装内にカプセル化します。コンポーネント内で直接データを取得しないでください。

@@ -6,6 +6,7 @@ plugins {
 	id 'org.jetbrains.kotlin.jvm' version '1.9.25'
 	id 'org.jetbrains.kotlin.plugin.spring' version '1.9.25'
 	id 'org.jetbrains.kotlin.plugin.jpa' version '1.9.25'
+    id 'org.flywaydb.flyway' version '9.22.0'
 }
 
 group = 'com.localbridge'
@@ -50,6 +51,7 @@ dependencies {
 	testImplementation 'org.jetbrains.kotlin:kotlin-test-junit5'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testImplementation 'org.springframework.security:spring-security-test'
+	implementation 'me.paulschwarz:spring-dotenv:4.0.0'
 }
 
 compileKotlin {
@@ -84,3 +86,44 @@ tasks.register('lint') {
 	dependsOn 'spotlessCheck'
 }
 
+
+flyway {
+    url = System.getenv('DB_URL') ?: 'jdbc:postgresql://localhost:5432/local_bridge'
+    user = System.getenv('DB_USERNAME') ?: 'postgres'
+    password = System.getenv('DB_PASSWORD') ?: 'postgres'
+    locations = ['filesystem:src/main/resources/db/migration']
+}
+
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+
+task flywayCreate {
+    description = "Create a Flyway migration file with proper naming."
+    group = "flyway"
+
+    doLast {
+        def desc = project.findProperty('migrationDesc')
+        if (!desc) {
+            throw new GradleException("Please provide -PmigrationDesc=<YourDescription>")
+        }
+
+        def migrationDir = file('src/main/resources/db/migration')
+        if (!migrationDir.exists()) migrationDir.mkdirs()
+
+        def existing = migrationDir.listFiles()
+                .findAll { it.name ==~ /V\\d+__.*\\.sql/ }
+                .collect { it.name.replaceAll(/V(\\d+)__.*/, '$1') as int }
+
+        def nextVersion = (existing.empty ? 1 : existing.max() + 1)
+
+        def formattedDesc = desc.replaceAll(/\\s+/, '_')
+                .replaceAll(/[^A-Za-z0-9_]/, '')
+                .toLowerCase()
+        def fileName = "V${nextVersion}__${formattedDesc}.sql"
+        def file = new File(migrationDir, fileName)
+
+        file.text = "-- Write your SQL migration here\n"
+
+        println "Created migration: ${file}"
+    }
+}

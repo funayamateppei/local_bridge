@@ -11,6 +11,12 @@ export const Routing = {
     return { relative, path }
   })(),
 
+  Register: (() => {
+    const relative = 'register'
+    const path = `/${relative}`
+    return { relative, path }
+  })(),
+
   Mobile: (() => {
     const relative = ''
     const path = '/'
