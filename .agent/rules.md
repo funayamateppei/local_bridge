@@ -70,6 +70,15 @@ description: Global Coding Guidelines
 - **Utility First**: カスタム CSS よりもユーティリティクラスを優先します。
 - **Configuration**: 必要に応じて `tailwind.config.js` でカスタムカラーやスペーシングを定義します。
 
+### UI Components & Icons
+
+- **Components**:
+  - 汎用的な UI コンポーネント（Button, Input, Dropdown 等）は `src/presentation/components/ui` に実装します。
+  - コンポーネントの実装には `clsx` と `tailwind-merge` を使用してクラス名を管理します。
+- **Icons**:
+  - アイコンライブラリには **lucide-react** を使用します。
+  - 例: `import { User, LogOut } from 'lucide-react'`
+
 ## 4. Naming Conventions (命名規則)
 
 - **Variables/Functions**: `camelCase`
