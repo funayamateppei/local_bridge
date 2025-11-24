@@ -1,9 +1,17 @@
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { MainLayout } from './layouts/MainLayout'
+import { HomePage } from './pages/HomePage'
+
 function App() {
   return (
-    <div>
-      <h1>Local Bridge</h1>
-    </div>
-  );
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<MainLayout />}>
+          <Route index element={<HomePage />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  )
 }
 
-export default App;
+export default App
