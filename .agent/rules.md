@@ -74,7 +74,9 @@ description: Global Coding Guidelines
 
 - **Components**:
   - 汎用的な UI コンポーネント（Button, Input, Dropdown 等）は `src/presentation/components/ui` に実装します。
-  - コンポーネントの実装には `clsx` と `tailwind-merge` を使用してクラス名を管理します。
+  - **`cn` (classnames) の使用基準**:
+    - **共通コンポーネント**: `className` props を受け取り、内部スタイルとマージする場合に**必須**です。
+    - **通常のページ/機能コンポーネント**: 基本的に**不要**です。通常の文字列としてクラス名を記述してください。条件付きスタイルが多い場合のみ使用を検討してください。
 - **Icons**:
   - アイコンライブラリには **lucide-react** を使用します。
   - 例: `import { User, LogOut } from 'lucide-react'`
