@@ -4,10 +4,11 @@ import { Routing } from '@/presentation/routes/routing'
 
 interface RegisterViewProps {
   isLoading: boolean
-  onSubmit: (username: string, password: string) => void
+  onRegister: (username: string) => void
+  error?: string
 }
 
-export const RegisterView = ({ isLoading, onSubmit }: RegisterViewProps) => {
+export const RegisterView = ({ isLoading, onRegister, error }: RegisterViewProps) => {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -19,7 +20,9 @@ export const RegisterView = ({ isLoading, onSubmit }: RegisterViewProps) => {
       alert('Passwords do not match')
       return
     }
-    onSubmit(username, password)
+    // TODO: パスワードも渡すようにするが、一旦Page側のインターフェースに合わせてusernameのみ
+    // 将来的には onRegister(username, password) に変更すべき
+    onRegister(username)
   }
 
   return (
@@ -29,6 +32,12 @@ export const RegisterView = ({ isLoading, onSubmit }: RegisterViewProps) => {
           <h2 className="text-3xl font-bold tracking-tight text-text">Create Account</h2>
           <p className="mt-2 text-sm text-muted">Sign up for Local Bridge</p>
         </div>
+
+        {error && (
+          <div className="rounded-md bg-red-500/10 p-4 text-sm text-red-500 border border-red-500/20">
+            {error}
+          </div>
+        )}
 
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <div className="space-y-4">

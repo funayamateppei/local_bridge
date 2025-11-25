@@ -1,17 +1,18 @@
 import { useState } from 'react'
 
 interface LoginViewProps {
+  onLogin: (username: string) => void
   isLoading: boolean
-  onSubmit: (username: string) => void
+  error?: string
 }
 
-export const LoginView = ({ isLoading, onSubmit }: LoginViewProps) => {
+export const LoginView = ({ onLogin, isLoading, error }: LoginViewProps) => {
   const [username, setUsername] = useState('')
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!username.trim()) return
-    onSubmit(username)
+    onLogin(username)
   }
 
   return (
@@ -21,6 +22,12 @@ export const LoginView = ({ isLoading, onSubmit }: LoginViewProps) => {
           <h2 className="text-3xl font-bold tracking-tight text-text">Welcome Back</h2>
           <p className="mt-2 text-sm text-muted">Sign in to your Local Bridge account</p>
         </div>
+
+        {error && (
+          <div className="rounded-md bg-red-500/10 p-4 text-sm text-red-500 border border-red-500/20">
+            {error}
+          </div>
+        )}
 
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <div>
