@@ -26,6 +26,15 @@ const router = createBrowserRouter(
           index: true,
           element: <pages.home.Page />,
         },
+        {
+          path: Routing.Desktop.Task.Create.path,
+          element: <pages.admin.task.create.Page />,
+        },
+        // Mobile Routes (Placeholder)
+        {
+          path: Routing.Mobile.Home.path,
+          element: <div>Mobile Home (Coming Soon)</div>,
+        },
       ],
     },
   ],

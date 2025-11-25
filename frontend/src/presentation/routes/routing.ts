@@ -18,16 +18,65 @@ export const Routing = {
   })(),
 
   Mobile: (() => {
-    const relative = ''
-    const path = '/'
+    const relative = 'mobile'
+    const path = `/${relative}`
     return {
       relative,
       path,
 
       Home: ((parentPath: string) => {
         const relative = ''
-        const path = parentPath // Home is index route
+        const path = parentPath // Mobile index
         return { relative, path }
+      })(path),
+
+      Task: ((parentPath: string) => {
+        const relative = 'tasks'
+        const path = `${parentPath}/${relative}`
+        return { relative, path }
+      })(path),
+    }
+  })(),
+
+  Desktop: (() => {
+    const relative = 'desktop'
+    const path = `/${relative}`
+    return {
+      relative,
+      path,
+      Task: ((parentPath: string) => {
+        const relative = 'tasks'
+        const path = `${parentPath}/${relative}`
+        return {
+          relative,
+          path,
+          Create: ((parentPath: string) => {
+            const relative = 'create'
+            const path = `${parentPath}/${relative}`
+            return { relative, path }
+          })(path),
+        }
+      })(path),
+    }
+  })(),
+  Admin: (() => {
+    const relative = 'admin'
+    const path = `/${relative}`
+    return {
+      relative,
+      path,
+      Task: ((parentPath: string) => {
+        const relative = 'tasks'
+        const path = `${parentPath}/${relative}`
+        return {
+          relative,
+          path,
+          Create: ((parentPath: string) => {
+            const relative = 'create'
+            const path = `${parentPath}/${relative}`
+            return { relative, path }
+          })(path),
+        }
       })(path),
     }
   })(),

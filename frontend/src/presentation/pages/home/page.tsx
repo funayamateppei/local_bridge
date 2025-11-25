@@ -1,3 +1,5 @@
+import { HomeView } from '@/presentation/features/home/HomeView'
+
 export const Page = () => {
-  return <div>Home Page (Placeholder)</div>
+  return <HomeView />
 }
