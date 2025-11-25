@@ -33,7 +33,15 @@ export const Routing = {
       Task: ((parentPath: string) => {
         const relative = 'tasks'
         const path = `${parentPath}/${relative}`
-        return { relative, path }
+        return {
+          relative,
+          path,
+          Detail: ((parentPath: string) => {
+            const relative = ':taskId'
+            const path = `${parentPath}/${relative}`
+            return { relative, path }
+          })(path),
+        }
       })(path),
     }
   })(),
@@ -52,6 +60,11 @@ export const Routing = {
           path,
           Create: ((parentPath: string) => {
             const relative = 'create'
+            const path = `${parentPath}/${relative}`
+            return { relative, path }
+          })(path),
+          Detail: ((parentPath: string) => {
+            const relative = ':taskId'
             const path = `${parentPath}/${relative}`
             return { relative, path }
           })(path),

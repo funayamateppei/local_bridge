@@ -20,12 +20,20 @@ export const HomeView = () => {
           <p className="text-sm text-muted-foreground">
             Create new inspection tasks and manage master data.
           </p>
-          <Link
-            to={Routing.Desktop.Task.Create.path}
-            className="inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 transition-colors"
-          >
-            Create Task
-          </Link>
+          <div className="flex gap-2">
+            <Link
+              to={Routing.Desktop.Task.path}
+              className="inline-flex flex-1 items-center justify-center rounded-lg border border-primary px-4 py-2 text-sm font-medium text-primary hover:bg-primary/10 transition-colors"
+            >
+              View All Tasks
+            </Link>
+            <Link
+              to={Routing.Desktop.Task.Create.path}
+              className="inline-flex flex-1 items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 transition-colors"
+            >
+              Create Task
+            </Link>
+          </div>
         </div>
 
         {/* Inspector Actions */}
