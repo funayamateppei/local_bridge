@@ -12,6 +12,7 @@ description: Global Coding Guidelines
 - **Local-First**: オフライン機能を最優先します。ネットワークリクエストはバックグラウンド同期のためにのみ使用し、UI をブロックしてはいけません。
 - **Type Safety**: TypeScript の型システムを広範囲に使用します。`any`の使用は厳禁です。
 - **Simplicity**: 複雑な抽象化よりも、可読性と保守性を優先します。
+- **Business Flow Documentation**: 業務フローは `docs/business-flow.md` で管理します。新機能の追加やフロー変更時は、必ずこのドキュメントを更新してください。
 
 ## 2. Architecture & Design Patterns (アーキテクチャとデザインパターン)
 
