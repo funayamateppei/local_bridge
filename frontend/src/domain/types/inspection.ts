@@ -41,3 +41,12 @@ export interface InspectionComment {
   createdBy: string // ユーザーID
   isSystemComment?: boolean // ステータス変更ログなど
 }
+
+export interface Evidence {
+  id: string
+  resultId: string // 紐づく検査結果のID
+  type: 'image' | 'video'
+  data: string // Base64エンコードされたデータ
+  mimeType: string // 'image/jpeg', 'video/mp4' など
+  createdAt: number
+}

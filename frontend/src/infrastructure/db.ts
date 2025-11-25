@@ -5,6 +5,7 @@ import type {
   InspectionTask,
   InspectionResult,
   InspectionComment,
+  Evidence,
 } from '@/domain/types/inspection'
 
 export interface Log {
@@ -30,6 +31,7 @@ export class LocalBridgeDatabase extends Dexie {
   inspectionTasks!: Table<InspectionTask>
   inspectionResults!: Table<InspectionResult>
   inspectionComments!: Table<InspectionComment>
+  evidences!: Table<Evidence>
 
   constructor() {
     super('LocalBridgeDB')
@@ -45,6 +47,10 @@ export class LocalBridgeDatabase extends Dexie {
       inspectionTasks: 'id, areaId, equipmentId, status, updatedAt',
       inspectionResults: 'id, taskId',
       inspectionComments: 'id, taskId',
+    })
+
+    this.version(3).stores({
+      evidences: 'id, resultId',
     })
   }
 }
