@@ -72,25 +72,4 @@ export const Routing = {
       })(path),
     }
   })(),
-  Admin: (() => {
-    const relative = 'admin'
-    const path = `/${relative}`
-    return {
-      relative,
-      path,
-      Task: ((parentPath: string) => {
-        const relative = 'tasks'
-        const path = `${parentPath}/${relative}`
-        return {
-          relative,
-          path,
-          Create: ((parentPath: string) => {
-            const relative = 'create'
-            const path = `${parentPath}/${relative}`
-            return { relative, path }
-          })(path),
-        }
-      })(path),
-    }
-  })(),
 } as const

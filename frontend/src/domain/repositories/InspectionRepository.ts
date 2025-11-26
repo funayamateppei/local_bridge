@@ -1,3 +1,4 @@
+import type { InspectionStatus } from '@/domain/types/inspection'
 import type {
   Area,
   Equipment,
@@ -5,8 +6,7 @@ import type {
   InspectionResult,
   Evidence,
   InspectionComment,
-  InspectionStatus,
-} from '@/domain/types/inspection'
+} from '@/domain/entities'
 
 export interface IInspectionRepository {
   getAreas(): Promise<Area[]>

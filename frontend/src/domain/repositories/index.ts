@@ -1,1 +1,2 @@
-export type { LogRepository } from './LogRepository'
+export type { IInspectionRepository } from './InspectionRepository'
+export type { IAuthRepository } from './AuthRepository'

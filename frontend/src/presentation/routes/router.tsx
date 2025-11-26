@@ -32,7 +32,7 @@ const router = createBrowserRouter(
         },
         {
           path: Routing.Desktop.Task.Create.path,
-          element: <pages.admin.task.create.Page />,
+          element: <pages.desktop.task.create.Page />,
         },
         {
           path: Routing.Desktop.Task.Detail.path,
@@ -46,6 +46,10 @@ const router = createBrowserRouter(
         {
           path: Routing.Mobile.Task.Detail.path,
           element: <pages.mobile.task.detail.Page />,
+        },
+        {
+          path: '*',
+          element: <div className="p-4 text-center">404 Not Found</div>,
         },
       ],
     },

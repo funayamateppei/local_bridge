@@ -1,7 +1,7 @@
 import * as home from './home'
 import * as login from './login'
 import * as register from './register'
-import * as adminTaskCreate from './admin/task/create'
+import * as desktopTaskCreate from './desktop/task/create'
 import * as desktopTaskList from './desktop/task/list'
 import * as desktopTaskDetail from './desktop/task/detail'
 import * as mobileHome from './mobile/home'
@@ -11,13 +11,9 @@ export const pages = {
   login,
   register,
   home,
-  admin: {
-    task: {
-      create: adminTaskCreate,
-    },
-  },
   desktop: {
     task: {
+      create: desktopTaskCreate,
       list: desktopTaskList,
       detail: desktopTaskDetail,
     },
