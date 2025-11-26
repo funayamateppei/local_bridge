@@ -25,11 +25,13 @@ Local Bridge のバックエンドは、フロントエンドに対して**通�
 ```
 GET    /api/areas                    # エリア一覧取得
 GET    /api/equipments               # 設備一覧取得
-GET    /api/tasks                    # タスク一覧取得
-POST   /api/tasks                    # タスク作成
-PUT    /api/tasks/:id                # タスク更新
-GET    /api/results                  # 結果一覧取得
-POST   /api/results                  # 結果作成
+GET    /api/inspections              # 検査一覧取得
+POST   /api/inspections              # 検査作成
+GET    /api/inspections/:id          # 検査詳細取得
+GET    /api/inspection-items         # 検査項目一覧取得
+POST   /api/inspection-items         # 検査項目作成
+GET    /api/inspection-results       # 検査結果一覧取得
+POST   /api/inspection-results       # 検査結果作成
 GET    /api/comments                 # コメント一覧取得
 POST   /api/comments                 # コメント作成
 POST   /api/evidences/presigned-url  # エビデンスアップロード用URL取得

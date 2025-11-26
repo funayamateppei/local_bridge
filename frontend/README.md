@@ -19,6 +19,8 @@ Local Bridgeは、インターネット接続が不安定な環境でも使用�
 - **ビルドツール**: Vite
 - **状態管理**: Zustand
 - **ローカルDB**: Dexie (IndexedDB wrapper)
+- **ファイルストレージ**: OPFS (Origin Private File System)
+- **PWA**: vite-plugin-pwa (Service Worker, Manifest)
 - **ルーティング**: React Router v7
 - **スタイリング**: Tailwind CSS
 - **アイコン**: Lucide React
@@ -105,6 +107,7 @@ src/
 ├── infrastructure/      # インフラ層(DB、API実装)
 │   ├── api/            # APIクライアント
 │   ├── db/             # IndexedDB設定
+│   ├── storage/        # OPFS実装
 │   └── repositories/   # リポジトリ実装
 └── presentation/        # プレゼンテーション層(UI)
     ├── components/     # 再利用可能なコンポーネント
@@ -145,6 +148,8 @@ src/
 - `/desktop/tasks` - タスク一覧
 - `/desktop/tasks/create` - タスク作成
 - `/desktop/tasks/:taskId` - タスク詳細
+- `/desktop/inspections` - 検査一覧 **(New)**
+- `/desktop/inspections/:inspectionId` - 検査詳細（再検査作成、フィルタリング機能） **(New)**
 
 ### モバイル(点検者向け)
 
