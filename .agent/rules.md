@@ -304,6 +304,7 @@ export class InspectionRepositoryImpl {
 ## 9. ドキュメント管理
 
 - **ルール**: すべての開発ルールは `.agent/rules.md` に記載します
+- **仕様書**: 詳細仕様は `docs/SPECIFICATION.md` に記載します。機能変更時は**必ず更新**してください
 - **アーキテクチャ**: フロントエンドの詳細設計は `frontend/ARCHITECTURE.md` に記載します
 - **README**: 各ディレクトリに `README.md` を配置し、セットアップ手順や使い方を記載します
 

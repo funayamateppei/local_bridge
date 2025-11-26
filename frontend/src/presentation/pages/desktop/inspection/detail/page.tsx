@@ -1,10 +1,22 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Calendar, CheckCircle2, AlertCircle, Clock, FileCheck } from 'lucide-react'
+import {
+  ArrowLeft,
+  Calendar,
+  CheckCircle2,
+  AlertCircle,
+  Clock,
+  FileCheck,
+  XCircle,
+  MinusCircle,
+} from 'lucide-react'
 import { inspectionRepository } from '@/infrastructure/repositories/InspectionRepositoryImpl'
 import { Routing } from '@/presentation/routes/routing'
 import { CreateReInspectionButton } from '@/presentation/components/CreateReInspectionButton'
-import type { Inspection, InspectionItem } from '@/domain/types/inspection'
+import type { Inspection, InspectionItem, InspectionResult } from '@/domain/types/inspection'
+import { Button } from '@/presentation/components/ui'
+
+type FilterType = 'all' | 'ng' | 'todo' | 'done'
 
 export const Page = () => {
   const { inspectionId } = useParams<{ inspectionId: string }>()
@@ -12,7 +24,9 @@ export const Page = () => {
 
   const [inspection, setInspection] = useState<Inspection | null>(null)
   const [items, setItems] = useState<InspectionItem[]>([])
+  const [results, setResults] = useState<Map<string, InspectionResult>>(new Map())
   const [isLoading, setIsLoading] = useState(true)
+  const [filter, setFilter] = useState<FilterType>('all')
 
   useEffect(() => {
     const loadData = async () => {
@@ -32,6 +46,13 @@ export const Page = () => {
 
         setInspection(inspectionData)
         setItems(itemsData)
+
+        // 結果を取得
+        const itemIds = itemsData.map((i) => i.id)
+        if (itemIds.length > 0) {
+          const resultsMap = await inspectionRepository.getLatestResultsByItemIds(itemIds)
+          setResults(resultsMap)
+        }
       } catch (error) {
         console.error('Failed to load inspection details:', error)
       } finally {
@@ -64,6 +85,29 @@ export const Page = () => {
 
   const statusInfo = statusConfig[inspection.status]
   const StatusIcon = statusInfo.icon
+
+  // フィルタリングロジック
+  const filteredItems = items.filter((item) => {
+    const result = results.get(item.id)
+
+    switch (filter) {
+      case 'ng':
+        return result?.verdict === 'ng'
+      case 'todo':
+        return item.status === 'todo'
+      case 'done':
+        return item.status === 'done' || item.status === 'in_review'
+      default:
+        return true
+    }
+  })
+
+  const counts = {
+    all: items.length,
+    ng: items.filter((i) => results.get(i.id)?.verdict === 'ng').length,
+    todo: items.filter((i) => i.status === 'todo').length,
+    done: items.filter((i) => i.status === 'done' || i.status === 'in_review').length,
+  }
 
   return (
     <div className="min-h-screen bg-background p-8">
@@ -109,16 +153,73 @@ export const Page = () => {
           </div>
         </div>
 
+        {/* Filter Tabs */}
+        <div className="mb-4 flex gap-2 overflow-x-auto pb-2">
+          <Button
+            variant={filter === 'all' ? 'default' : 'ghost'}
+            onClick={() => setFilter('all')}
+            size="sm"
+          >
+            All ({counts.all})
+          </Button>
+          <Button
+            variant={filter === 'ng' ? 'default' : 'ghost'}
+            onClick={() => setFilter('ng')}
+            size="sm"
+            className={
+              filter === 'ng'
+                ? 'bg-red-500 hover:bg-red-600'
+                : 'text-red-500 hover:text-red-600 hover:bg-red-50'
+            }
+          >
+            NG Only ({counts.ng})
+          </Button>
+          <Button
+            variant={filter === 'todo' ? 'default' : 'ghost'}
+            onClick={() => setFilter('todo')}
+            size="sm"
+          >
+            To Do ({counts.todo})
+          </Button>
+          <Button
+            variant={filter === 'done' ? 'default' : 'ghost'}
+            onClick={() => setFilter('done')}
+            size="sm"
+          >
+            Done ({counts.done})
+          </Button>
+        </div>
+
         {/* Items List */}
         <div className="rounded-xl border border-surface bg-surface/30">
           <div className="border-b border-surface p-4">
-            <h2 className="text-lg font-semibold">Inspection Items ({items.length})</h2>
+            <h2 className="text-lg font-semibold">Inspection Items ({filteredItems.length})</h2>
           </div>
 
           <div className="divide-y divide-surface">
-            {items.map((item) => {
+            {filteredItems.map((item) => {
               const itemStatusInfo = statusConfig[item.status]
-              const ItemStatusIcon = itemStatusInfo.icon
+              const result = results.get(item.id)
+
+              let ResultIcon = MinusCircle
+              let resultColor = 'text-gray-400'
+              let resultLabel = 'Not Checked'
+
+              if (result) {
+                if (result.verdict === 'ok') {
+                  ResultIcon = CheckCircle2
+                  resultColor = 'text-green-500'
+                  resultLabel = 'OK'
+                } else if (result.verdict === 'ng') {
+                  ResultIcon = XCircle
+                  resultColor = 'text-red-500'
+                  resultLabel = 'NG'
+                } else {
+                  ResultIcon = MinusCircle
+                  resultColor = 'text-gray-500'
+                  resultLabel = 'N/A'
+                }
+              }
 
               return (
                 <Link
@@ -133,22 +234,32 @@ export const Page = () => {
                     )}
                   </div>
 
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-6">
+                    {/* Result Badge */}
+                    {result && (
+                      <div className={`flex items-center gap-1.5 font-bold ${resultColor}`}>
+                        <ResultIcon className="h-5 w-5" />
+                        <span>{resultLabel}</span>
+                      </div>
+                    )}
+
+                    {/* Status Badge */}
                     <div
                       className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs ${itemStatusInfo.bg} ${itemStatusInfo.color}`}
                     >
-                      <ItemStatusIcon className="h-3 w-3" />
+                      <itemStatusInfo.icon className="h-3 w-3" />
                       <span className="font-medium">{itemStatusInfo.label}</span>
                     </div>
+
                     <div className="text-muted-foreground">→</div>
                   </div>
                 </Link>
               )
             })}
 
-            {items.length === 0 && (
+            {filteredItems.length === 0 && (
               <div className="p-8 text-center text-muted-foreground">
-                No items found in this inspection.
+                No items found matching the filter.
               </div>
             )}
           </div>

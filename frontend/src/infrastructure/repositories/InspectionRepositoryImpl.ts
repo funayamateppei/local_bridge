@@ -217,6 +217,40 @@ export class InspectionRepositoryImpl implements IInspectionRepository {
     )
   }
 
+  async getLatestResultsByItemIds(itemIds: string[]): Promise<Map<string, InspectionResult>> {
+    const results = await db.inspectionResults.where('inspectionItemId').anyOf(itemIds).toArray()
+
+    const latestResults = new Map<string, InspectionResult>()
+
+    // Group by itemId and find latest
+    const grouped = results.reduce(
+      (acc, curr) => {
+        if (!acc[curr.inspectionItemId] || acc[curr.inspectionItemId].createdAt < curr.createdAt) {
+          acc[curr.inspectionItemId] = curr
+        }
+        return acc
+      },
+      {} as Record<string, (typeof results)[0]>
+    )
+
+    Object.values(grouped).forEach((r) => {
+      latestResults.set(
+        r.inspectionItemId,
+        new InspectionResult(
+          r.id,
+          r.inspectionItemId,
+          r.verdict,
+          r.evidenceIds,
+          r.createdAt,
+          r.createdBy,
+          r.note
+        )
+      )
+    })
+
+    return latestResults
+  }
+
   // Comment
   async addComment(comment: Omit<InspectionComment, 'id' | 'createdAt'>): Promise<void> {
     const now = Date.now()

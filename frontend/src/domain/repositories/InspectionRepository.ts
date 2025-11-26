@@ -33,6 +33,7 @@ export interface IInspectionRepository {
   ): Promise<string> // Returns evidence ID
   getEvidencesByResultId(resultId: string): Promise<Evidence[]>
   getResultsByItemId(itemId: string): Promise<InspectionResult[]>
+  getLatestResultsByItemIds(itemIds: string[]): Promise<Map<string, InspectionResult>>
 
   // Comment
   addComment(comment: Omit<InspectionComment, 'id' | 'createdAt'>): Promise<void>
