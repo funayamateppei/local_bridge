@@ -59,7 +59,7 @@ export const InspectionView = ({
   }> = [
     { value: 'ok', label: 'OK', icon: CheckCircle, color: 'bg-green-500' },
     { value: 'ng', label: 'NG', icon: XCircle, color: 'bg-red-500' },
-    { value: 'n_a', label: 'N/A', icon: HelpCircle, color: 'bg-gray-500' },
+    { value: 'n_a', label: '対象外', icon: HelpCircle, color: 'bg-gray-500' },
   ]
 
   return (
@@ -81,7 +81,7 @@ export const InspectionView = ({
 
       {/* Verdict Selection */}
       <div className="mb-6">
-        <h3 className="mb-3 text-sm font-semibold">Inspection Result</h3>
+        <h3 className="mb-3 text-sm font-semibold">検査結果</h3>
         <div className="grid grid-cols-3 gap-3">
           {verdictOptions.map((option) => {
             const Icon = option.icon
@@ -107,7 +107,7 @@ export const InspectionView = ({
 
       {/* Photo/Video Capture */}
       <div className="mb-6">
-        <h3 className="mb-3 text-sm font-semibold">Evidence</h3>
+        <h3 className="mb-3 text-sm font-semibold">証拠画像・動画</h3>
         <CameraInput onCapture={handleCapture} acceptVideo />
 
         {/* Preview */}
@@ -141,11 +141,11 @@ export const InspectionView = ({
 
       {/* Note */}
       <div className="mb-6">
-        <h3 className="mb-3 text-sm font-semibold">Notes (Optional)</h3>
+        <h3 className="mb-3 text-sm font-semibold">備考（任意）</h3>
         <Textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder="Add any observations or comments..."
+          placeholder="気付いた点やコメントを入力..."
           rows={4}
         />
       </div>
@@ -158,7 +158,7 @@ export const InspectionView = ({
           className="w-full"
           size="lg"
         >
-          {isLoading ? 'Submitting...' : 'Submit Inspection'}
+          {isLoading ? '送信中...' : '検査結果を送信'}
         </Button>
       </div>
     </div>

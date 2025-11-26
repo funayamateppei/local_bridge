@@ -11,17 +11,17 @@ interface InspectionListViewProps {
 }
 
 const statusConfig: Record<InspectionStatus, { label: string; icon: LucideIcon; color: string }> = {
-  todo: { label: 'To Do', icon: Clock, color: 'bg-gray-500' },
-  in_review: { label: 'In Review', icon: FileCheck, color: 'bg-blue-500' },
-  done: { label: 'Done', icon: CheckCircle2, color: 'bg-green-500' },
-  correction_needed: { label: 'Re-check Needed', icon: AlertCircle, color: 'bg-red-500' },
+  todo: { label: '未実施', icon: Clock, color: 'bg-gray-500' },
+  in_review: { label: '確認中', icon: FileCheck, color: 'bg-blue-500' },
+  done: { label: '完了', icon: CheckCircle2, color: 'bg-green-500' },
+  correction_needed: { label: '要再検査', icon: AlertCircle, color: 'bg-red-500' },
 }
 
 export const InspectionListView = ({ inspections, isLoading }: InspectionListViewProps) => {
   const [filterStatus, setFilterStatus] = useState<InspectionStatus | 'all'>('all')
 
   if (isLoading) {
-    return <div className="p-8 text-center">Loading inspections...</div>
+    return <div className="p-8 text-center">読み込み中...</div>
   }
 
   const filteredInspections =
@@ -39,7 +39,7 @@ export const InspectionListView = ({ inspections, isLoading }: InspectionListVie
     <div className="min-h-screen bg-background p-8">
       <div className="mx-auto max-w-6xl">
         <div className="mb-8 flex items-center justify-between">
-          <h1 className="text-3xl font-bold">Inspections</h1>
+          <h1 className="text-3xl font-bold">検査一覧</h1>
         </div>
 
         {/* Status Filter */}
@@ -52,7 +52,7 @@ export const InspectionListView = ({ inspections, isLoading }: InspectionListVie
                 : 'bg-surface/30 text-foreground hover:bg-surface/50'
             }`}
           >
-            All ({statusCounts.all})
+            すべて ({statusCounts.all})
           </button>
           {Object.entries(statusConfig).map(([status, config]) => {
             const Icon = config.icon
@@ -76,7 +76,7 @@ export const InspectionListView = ({ inspections, isLoading }: InspectionListVie
         {/* Inspection List */}
         {filteredInspections.length === 0 ? (
           <div className="rounded-xl border border-surface bg-surface/20 p-12 text-center">
-            <p className="text-muted-foreground">No inspections found.</p>
+            <p className="text-muted-foreground">検査が見つかりません。</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -107,7 +107,7 @@ export const InspectionListView = ({ inspections, isLoading }: InspectionListVie
                           </p>
                         )}
                         <p className="mt-2 text-xs text-muted-foreground">
-                          Created: {new Date(inspection.createdAt).toLocaleString()}
+                          作成日: {new Date(inspection.createdAt).toLocaleString()}
                         </p>
                       </Link>
                     </div>

@@ -23,7 +23,7 @@ export const Page = () => {
       try {
         const taskData = await inspectionRepository.getItemById(taskId)
         if (!taskData) {
-          alert('Task not found')
+          alert('タスクが見つかりません')
           navigate(Routing.Mobile.Home.path)
           return
         }
@@ -39,7 +39,7 @@ export const Page = () => {
         setEquipment(foundEquipment || null)
       } catch (error) {
         console.error('Failed to load task:', error)
-        alert('Failed to load task data')
+        alert('タスクデータの読み込みに失敗しました')
       }
     }
     loadTaskData()
@@ -77,18 +77,18 @@ export const Page = () => {
         createdBy: username, // 実際のユーザー名を使用
       })
 
-      alert('Inspection result submitted successfully!')
+      alert('検査結果を送信しました！')
       navigate(Routing.Mobile.Home.path)
     } catch (error) {
       console.error('Failed to submit result:', error)
-      alert('Failed to submit inspection result')
+      alert('検査結果の送信に失敗しました')
     } finally {
       setIsLoading(false)
     }
   }
 
   if (!task || !area || !equipment) {
-    return <div className="p-4 text-center">Loading...</div>
+    return <div className="p-4 text-center">読み込み中...</div>
   }
 
   return (

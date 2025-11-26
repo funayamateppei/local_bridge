@@ -29,7 +29,7 @@ export const MainLayout = () => {
                   className="gap-2"
                 >
                   <ClipboardList className="h-4 w-4" />
-                  Inspections
+                  検査一覧
                 </Button>
               </Link>
               <Link to={Routing.Desktop.Task.path}>
@@ -38,7 +38,7 @@ export const MainLayout = () => {
                   className="gap-2"
                 >
                   <ListTodo className="h-4 w-4" />
-                  Tasks
+                  タスク管理
                 </Button>
               </Link>
             </nav>
@@ -56,9 +56,9 @@ export const MainLayout = () => {
                 </Button>
               }
             >
-              <DropdownMenuItem icon={<User className="h-4 w-4" />}>Profile</DropdownMenuItem>
+              <DropdownMenuItem icon={<User className="h-4 w-4" />}>プロフィール</DropdownMenuItem>
               <DropdownMenuItem onClick={logout} icon={<LogOut className="h-4 w-4" />}>
-                Logout
+                ログアウト
               </DropdownMenuItem>
             </DropdownMenu>
           </nav>

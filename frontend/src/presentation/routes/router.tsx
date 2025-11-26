@@ -1,4 +1,4 @@
-import { createBrowserRouter, RouterProvider } from 'react-router-dom'
+import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom'
 import { MainLayout } from '@/presentation/layouts/MainLayout'
 import { pages } from '@/presentation/pages'
 import { Routing } from '@/presentation/routes/routing'
@@ -24,8 +24,9 @@ const router = createBrowserRouter(
       children: [
         {
           index: true,
-          element: <pages.home.Page />,
+          element: <Navigate to={Routing.Mobile.path} replace />,
         },
+        // Desktop Routes
         {
           path: Routing.Desktop.Task.path,
           element: <pages.desktop.task.list.Page />,
@@ -38,6 +39,14 @@ const router = createBrowserRouter(
           path: Routing.Desktop.Task.Detail.path,
           element: <pages.desktop.task.detail.Page />,
         },
+        {
+          path: Routing.Desktop.Inspection.List.path,
+          element: <pages.desktop.inspection.list.Page />,
+        },
+        {
+          path: Routing.Desktop.Inspection.Detail.path,
+          element: <pages.desktop.inspection.detail.Page />,
+        },
         // Mobile Routes
         {
           path: Routing.Mobile.Home.path,
@@ -49,7 +58,7 @@ const router = createBrowserRouter(
         },
         {
           path: '*',
-          element: <div className="p-4 text-center">404 Not Found</div>,
+          element: <div className="p-4 text-center">ページが見つかりません</div>,
         },
       ],
     },

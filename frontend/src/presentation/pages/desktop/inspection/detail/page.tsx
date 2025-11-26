@@ -63,20 +63,20 @@ export const Page = () => {
   }, [inspectionId, navigate])
 
   if (isLoading || !inspection) {
-    return <div className="p-8 text-center">Loading...</div>
+    return <div className="p-8 text-center">読み込み中...</div>
   }
 
   const statusConfig = {
-    todo: { label: 'To Do', icon: Clock, color: 'text-gray-500', bg: 'bg-gray-500/10' },
+    todo: { label: '未実施', icon: Clock, color: 'text-gray-500', bg: 'bg-gray-500/10' },
     in_review: {
-      label: 'In Review',
+      label: '確認中',
       icon: FileCheck,
       color: 'text-blue-500',
       bg: 'bg-blue-500/10',
     },
-    done: { label: 'Done', icon: CheckCircle2, color: 'text-green-500', bg: 'bg-green-500/10' },
+    done: { label: '完了', icon: CheckCircle2, color: 'text-green-500', bg: 'bg-green-500/10' },
     correction_needed: {
-      label: 'Re-check Needed',
+      label: '要再検査',
       icon: AlertCircle,
       color: 'text-red-500',
       bg: 'bg-red-500/10',
@@ -119,7 +119,7 @@ export const Page = () => {
             className="mb-4 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back to Inspections
+            検査一覧に戻る
           </Link>
 
           <div className="flex items-start justify-between">
@@ -147,7 +147,7 @@ export const Page = () => {
           <div className="mt-4 flex items-center gap-4 text-sm text-muted-foreground">
             <div className="flex items-center gap-1">
               <Calendar className="h-4 w-4" />
-              <span>Created: {new Date(inspection.createdAt).toLocaleDateString()}</span>
+              <span>作成日: {new Date(inspection.createdAt).toLocaleDateString()}</span>
             </div>
             <div>ID: {inspection.id}</div>
           </div>
@@ -160,7 +160,7 @@ export const Page = () => {
             onClick={() => setFilter('all')}
             size="sm"
           >
-            All ({counts.all})
+            すべて ({counts.all})
           </Button>
           <Button
             variant={filter === 'ng' ? 'default' : 'ghost'}
@@ -172,28 +172,28 @@ export const Page = () => {
                 : 'text-red-500 hover:text-red-600 hover:bg-red-50'
             }
           >
-            NG Only ({counts.ng})
+            NGのみ ({counts.ng})
           </Button>
           <Button
             variant={filter === 'todo' ? 'default' : 'ghost'}
             onClick={() => setFilter('todo')}
             size="sm"
           >
-            To Do ({counts.todo})
+            未実施 ({counts.todo})
           </Button>
           <Button
             variant={filter === 'done' ? 'default' : 'ghost'}
             onClick={() => setFilter('done')}
             size="sm"
           >
-            Done ({counts.done})
+            完了 ({counts.done})
           </Button>
         </div>
 
         {/* Items List */}
         <div className="rounded-xl border border-surface bg-surface/30">
           <div className="border-b border-surface p-4">
-            <h2 className="text-lg font-semibold">Inspection Items ({filteredItems.length})</h2>
+            <h2 className="text-lg font-semibold">検査項目 ({filteredItems.length})</h2>
           </div>
 
           <div className="divide-y divide-surface">
@@ -203,7 +203,7 @@ export const Page = () => {
 
               let ResultIcon = MinusCircle
               let resultColor = 'text-gray-400'
-              let resultLabel = 'Not Checked'
+              let resultLabel = '未実施'
 
               if (result) {
                 if (result.verdict === 'ok') {
@@ -217,15 +217,17 @@ export const Page = () => {
                 } else {
                   ResultIcon = MinusCircle
                   resultColor = 'text-gray-500'
-                  resultLabel = 'N/A'
+                  resultLabel = '対象外'
                 }
               }
 
               return (
                 <Link
                   key={item.id}
-                  to={Routing.Desktop.Task.Detail.path.replace(':taskId', item.id)}
-                  className="flex items-center justify-between p-4 transition-colors hover:bg-surface/50"
+                  // TODO: InspectionItem詳細ページへの正しいリンクを設定する
+                  to="#"
+                  className="flex items-center justify-between p-4 transition-colors hover:bg-surface/50 cursor-default"
+                  onClick={(e) => e.preventDefault()} // 一時的に無効化
                 >
                   <div>
                     <h3 className="font-medium">{item.title}</h3>
@@ -250,8 +252,6 @@ export const Page = () => {
                       <itemStatusInfo.icon className="h-3 w-3" />
                       <span className="font-medium">{itemStatusInfo.label}</span>
                     </div>
-
-                    <div className="text-muted-foreground">→</div>
                   </div>
                 </Link>
               )
@@ -259,7 +259,7 @@ export const Page = () => {
 
             {filteredItems.length === 0 && (
               <div className="p-8 text-center text-muted-foreground">
-                No items found matching the filter.
+                条件に一致する項目はありません。
               </div>
             )}
           </div>
