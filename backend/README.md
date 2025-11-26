@@ -1,5 +1,42 @@
 # Backend (Spring Boot)
 
+## 概要
+
+Local Bridge のバックエンドは、フロントエンドに対して**通常の REST API**を提供します。
+
+### バックエンドの役割
+
+1. **データの永続化** - PostgreSQL へのデータ保存・取得
+2. **CRUD API 提供** - エリア、設備、タスク、結果、コメントの CRUD 操作
+3. **認証・認可** - ユーザー認証とアクセス制御
+4. **ファイルストレージ** - エビデンス(画像・動画)のアップロード先 URL 提供
+
+### バックエンドが**知らなくて良い**こと
+
+- ✅ クライアントがオフラインかオンラインか
+- ✅ いつ同期が実行されるか
+- ✅ どのデータが未同期か(`sync_status`等はクライアント専用フィールド)
+- ✅ 競合解決ロジック(クライアント側で実装)
+
+**同期ロジックはすべてフロントエンド側で完結します。** バックエンドは通常の REST API を提供するだけで、同期を意識する必要はありません。
+
+### 主要な API エンドポイント
+
+```
+GET    /api/areas                    # エリア一覧取得
+GET    /api/equipments               # 設備一覧取得
+GET    /api/tasks                    # タスク一覧取得
+POST   /api/tasks                    # タスク作成
+PUT    /api/tasks/:id                # タスク更新
+GET    /api/results                  # 結果一覧取得
+POST   /api/results                  # 結果作成
+GET    /api/comments                 # コメント一覧取得
+POST   /api/comments                 # コメント作成
+POST   /api/evidences/presigned-url  # エビデンスアップロード用URL取得
+```
+
+詳細は [ARCHITECTURE.md](./ARCHITECTURE.md) を参照してください。
+
 ## Development Scripts
 
 ### Format
