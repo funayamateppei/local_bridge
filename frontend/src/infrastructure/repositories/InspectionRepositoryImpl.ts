@@ -116,9 +116,11 @@ export class InspectionRepositoryImpl implements IInspectionRepository {
       id,
       evidence.resultId,
       evidence.type,
-      evidence.data,
+      evidence.filePath,
       evidence.mimeType,
-      now
+      now,
+      evidence.fileSize,
+      evidence.thumbnailPath
     )
     await db.evidences.add({ ...newEvidence })
     return id
@@ -127,7 +129,17 @@ export class InspectionRepositoryImpl implements IInspectionRepository {
   async getEvidencesByResultId(resultId: string): Promise<Evidence[]> {
     const evidences = await db.evidences.where('resultId').equals(resultId).toArray()
     return evidences.map(
-      (e) => new Evidence(e.id, e.resultId, e.type, e.data, e.mimeType, e.createdAt)
+      (e) =>
+        new Evidence(
+          e.id,
+          e.resultId,
+          e.type,
+          e.filePath,
+          e.mimeType,
+          e.createdAt,
+          e.fileSize,
+          e.thumbnailPath
+        )
     )
   }
 
