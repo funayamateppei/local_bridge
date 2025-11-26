@@ -70,6 +70,24 @@ export const Routing = {
           })(path),
         }
       })(path),
+      Inspection: ((parentPath: string) => {
+        const relative = 'inspections'
+        const path = `${parentPath}/${relative}`
+        return {
+          relative,
+          path,
+          List: ((parentPath: string) => {
+            const relative = ''
+            const path = parentPath
+            return { relative, path }
+          })(path),
+          Detail: ((parentPath: string) => {
+            const relative = ':inspectionId'
+            const path = `${parentPath}/${relative}`
+            return { relative, path }
+          })(path),
+        }
+      })(path),
     }
   })(),
 } as const
