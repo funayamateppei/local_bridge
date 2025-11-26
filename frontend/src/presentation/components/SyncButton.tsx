@@ -24,8 +24,8 @@ export const SyncButton = () => {
     return '同期'
   }
 
-  const getButtonVariant = () => {
-    if (status === 'error') return 'destructive'
+  const getButtonVariant = (): 'default' | 'outline' | 'ghost' | 'link' | undefined => {
+    if (status === 'error') return 'default'
     if (status === 'success') return 'outline'
     return 'default'
   }

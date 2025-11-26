@@ -5,7 +5,7 @@ import { useSyncStore } from '@/presentation/stores/useSyncStore'
 export const useSync = () => {
   const { status, lastSyncedAt, error, startSync, syncSuccess, syncError, resetSync } =
     useSyncStore()
-  const [isOnline, setIsOnline] = useState(navigator.onLine)
+  const [isOnline] = useState(navigator.onLine)
 
   /**
    * 同期を実行

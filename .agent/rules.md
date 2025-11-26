@@ -306,3 +306,58 @@ export class InspectionRepositoryImpl {
 - **ルール**: すべての開発ルールは `.agent/rules.md` に記載します
 - **アーキテクチャ**: フロントエンドの詳細設計は `frontend/ARCHITECTURE.md` に記載します
 - **README**: 各ディレクトリに `README.md` を配置し、セットアップ手順や使い方を記載します
+
+## 10. バックエンド開発ルール
+
+### データベースマイグレーション
+
+#### Flyway マイグレーションファイルの作成
+
+1. **命名規則**: `V{version}__{description}.sql`
+
+   - 例: `V2__create_inspection_tables.sql`
+   - バージョン番号は連番で、既存のマイグレーションより大きい番号を使用
+
+2. **ER 図の更新**:
+
+   - **必須**: マイグレーションファイルを作成したら、必ず `backend/ER_DIAGRAM.md` を更新すること
+   - Mermaid 形式の ER 図を最新の状態に保つ
+   - テーブル説明、ステータス定義、インデックス情報も更新
+   - 更新履歴テーブルにバージョンと変更内容を記録
+
+3. **マイグレーションの内容**:
+
+   - テーブル作成時は外部キー制約を明示的に定義
+   - パフォーマンスのため、適切なインデックスを作成
+   - `ON DELETE CASCADE` などのカスケード動作を明確に指定
+   - デフォルト値は `DEFAULT` 句で設定
+
+4. **実行順序**:
+   - マイグレーションは一度実行されたら変更不可
+   - 修正が必要な場合は新しいマイグレーションファイルを作成
+
+#### Entity 定義
+
+- JPA/Hibernate アノテーションを使用
+- `data class` を使用してボイラープレートを削減
+- Enum は別途定義し、`@Enumerated(EnumType.STRING)` で保存
+- タイムスタンプは `java.time.Instant` を使用
+
+#### Repository
+
+- Spring Data JPA の `JpaRepository` を継承
+- カスタムクエリメソッドは命名規則に従う（例: `findByAreaId`）
+- 複雑なクエリは `@Query` アノテーションを使用
+
+#### Controller
+
+- RESTful API の原則に従う
+- `@CrossOrigin` は開発時のみ使用、本番環境では適切に設定
+- Request/Response DTO を明確に定義
+- HTTP ステータスコードを適切に返す（201 Created, 404 Not Found 等）
+
+### ドキュメント
+
+- **ER 図**: `backend/ER_DIAGRAM.md` に Mermaid 形式で記載
+- **API 仕様**: 必要に応じて Swagger/OpenAPI で文書化
+- **README**: セットアップ手順、環境変数、実行方法を記載
