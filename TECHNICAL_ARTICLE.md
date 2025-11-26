@@ -50,26 +50,26 @@ Local-First とは、**「ローカルデバイス（ブラウザ）を信頼で
 
 ```mermaid
 graph TD
-    subgraph Presentation [Presentation Layer]
-        React[React Components]
-        Store[Zustand Store]
+    subgraph Presentation ["Presentation Layer"]
+        React["React Components"]
+        Store["Zustand Store"]
     end
 
-    subgraph Domain [Domain Layer]
-        Entity[Entities]
-        RepoInterface[Repository Interfaces]
+    subgraph Domain ["Domain Layer"]
+        Entity["Entities"]
+        RepoInterface["Repository Interfaces"]
     end
 
-    subgraph Infrastructure [Infrastructure Layer]
-        RepoImpl[Repository Implementations]
-        Dexie[Dexie.js (IndexedDB)]
-        OPFS[OPFS Storage]
-        API[API Client]
+    subgraph Infrastructure ["Infrastructure Layer"]
+        RepoImpl["Repository Implementations"]
+        Dexie["Dexie.js (IndexedDB)"]
+        OPFS["OPFS Storage"]
+        API["API Client"]
     end
 
     React --> Store
     Store --> RepoInterface
-    RepoImpl ..|> RepoInterface
+    RepoImpl -.-> RepoInterface
     RepoImpl --> Dexie
     RepoImpl --> OPFS
     RepoImpl --> API
@@ -194,6 +194,28 @@ Local-First における最大の課題は「同期」と「競合解決」で�
 4. **InspectionResult (点検結果)**:
    - JSON データとして API へ POST。
    - 成功したら `sync_status = 'synced'` に更新。
+
+### UI は「常に」IndexedDB を見る
+
+このアーキテクチャの重要なポイントは、**UI コンポーネントが API を直接叩かない**ことです。
+
+- **Read**: 常に IndexedDB からデータを取得して表示します（`useLiveQuery`などでリアクティブに反映）。
+- **Write**: IndexedDB に書き込みます。
+
+これにより、ユーザーは「サーバーからのレスポンス待ち」を経験することがありません。API 通信はすべてバックグラウンド（同期プロセス）で行われ、UI スレッドをブロックしないため、**体感速度は爆速**になります。
+
+### コラム：なぜ「手動同期」なのか？
+
+技術的には `navigator.onLine` や `window.addEventListener('online')` を使用して、ネットワーク復帰時に自動で同期を開始することも可能です。
+
+しかし、現場のネットワーク環境は「繋がっているけど極端に遅い」「頻繁に切れる」といった不安定な状況が多々あります。
+そのような環境で自動同期が走ると：
+
+- バッテリーを激しく消耗する
+- 中途半端に失敗してデータ整合性が心配になる
+- ユーザーが「今保存された？」と不安になる
+
+といった UX 上の問題が発生します。そのため、今回は**ユーザーにコントロール権を委ねる（明示的に同期ボタンを押してもらう）** 設計を採用しました。もちろん、要件によっては自動同期を採用することも可能です。
 
 ### 競合解決戦略
 
