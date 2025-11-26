@@ -101,6 +101,35 @@ export class InspectionRepositoryImpl implements IInspectionRepository {
    - **Client → Server**: 点検結果(InspectionResult, Evidence)
    - **Bi-directional**: コメント(InspectionComment)
 
+### 競合解決
+
+複数の点検者が同じタスクを同時に実施する可能性があるため、以下の戦略で競合を解決します:
+
+1. **InspectionResult: Append-Only (追記のみ)**
+
+   - 1 つのタスクに対して複数の結果を許容
+   - 各点検者の結果は独立して保存
+   - `createdBy`と`createdAt`で作成者と時刻を記録
+   - UI では最新の結果を表示、履歴も閲覧可能
+
+2. **InspectionTask Status: Last-Write-Wins (LWW)**
+
+   - `updatedAt`タイムスタンプで最新を判定
+   - サーバーが最終的な真実を保持
+   - 同期時にタイムスタンプを比較して新しい方を採用
+
+3. **InspectionComment: Merge (マージ)**
+
+   - ID で重複を検知
+   - 両方のコメントを保持
+   - UUID により ID 衝突は発生しない
+
+4. **Evidence: Immutable (不変)**
+   - 一度作成されたエビデンスは変更・削除しない
+   - 証拠としての完全性を保つ
+
+詳細は `frontend/ARCHITECTURE.md` の「競合解決戦略」セクションを参照してください。
+
 ### バイナリファイル管理(OPFS)
 
 #### 基本方針

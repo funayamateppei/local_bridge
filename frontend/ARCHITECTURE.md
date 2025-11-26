@@ -108,6 +108,130 @@ sequenceDiagram
 | InspectionComment | Bi-directional  | コメントは双方向同期                 |
 | Evidence          | Client → Server | 写真・動画はクライアントから送信     |
 
+### 競合解決戦略
+
+複数の点検者が同じタスクを同時に実施する可能性があるため、競合解決戦略を定義します。
+
+#### 1. InspectionResult: Append-Only (追記のみ)
+
+**方針**: 1つのタスクに対して複数の結果を許容します。
+
+```typescript
+// 1つのタスクに複数の結果が紐づく
+Task #123
+  ├─ Result A (by User1, 2025-11-26 09:00, verdict: OK)
+  ├─ Result B (by User2, 2025-11-26 09:05, verdict: NG)
+  └─ Result C (by User1, 2025-11-26 10:00, verdict: OK) ← 最新
+```
+
+**理由**:
+
+- 競合が発生しない(各点検者の結果は独立)
+- 履歴が残る(誰がいつ何を報告したか)
+- 監査証跡として有用
+- 管理者が最終判断を下せる
+
+**実装**:
+
+- `createdBy` フィールドで作成者を記録
+- `createdAt` で時系列を管理
+- UIでは最新の結果を表示、履歴も閲覧可能
+
+#### 2. InspectionTask Status: Last-Write-Wins (LWW)
+
+**方針**: タイムスタンプで最新を判定し、サーバーが最終的な真実を保持します。
+
+```typescript
+// 同期時の処理
+if (serverTask.updatedAt > localTask.updatedAt) {
+  // サーバーの方が新しい → ローカルを上書き
+  await db.inspectionTasks.update(taskId, serverTask)
+} else if (localTask.updatedAt > serverTask.updatedAt) {
+  // ローカルの方が新しい → サーバーに送信
+  await api.updateTask(taskId, localTask)
+}
+```
+
+**理由**:
+
+- タスクステータスは1つの状態のみを持つべき
+- 最新の更新が優先される
+- シンプルで実装が容易
+
+**注意点**:
+
+- ネットワーク遅延により、古い更新が後から適用される可能性がある
+- 重要な場合は楽観的ロック(`version`フィールド)を検討
+
+#### 3. InspectionComment: Merge (マージ)
+
+**方針**: IDで重複を検知し、両方のコメントを保持します。
+
+```typescript
+// 同期時の処理
+const localCommentIds = new Set(localComments.map((c) => c.id))
+const serverCommentIds = new Set(serverComments.map((c) => c.id))
+
+// ローカルにない新しいコメントを取得
+const newComments = serverComments.filter((c) => !localCommentIds.has(c.id))
+await db.inspectionComments.bulkAdd(newComments)
+
+// サーバーにない新しいコメントを送信
+const unsyncedComments = localComments.filter((c) => !serverCommentIds.has(c.id))
+await api.createComments(unsyncedComments)
+```
+
+**理由**:
+
+- 各コメントは独立した情報
+- すべてのコメントを保持することで情報が失われない
+- UUIDによりID衝突は発生しない
+
+#### 4. Evidence: Immutable (不変)
+
+**方針**: 一度作成されたエビデンスは変更・削除されません。
+
+**理由**:
+
+- 証拠としての完全性を保つ
+- 監査証跡として重要
+- 競合の可能性がない(追加のみ)
+
+### 競合発生時のUI表示
+
+#### タスク詳細画面
+
+```
+タスク: #123 - 冷蔵庫の点検
+ステータス: レビュー中 (最終更新: 2025-11-26 10:05 by 管理者)
+
+点検結果:
+┌─────────────────────────────────────────┐
+│ 最新の結果 (2025-11-26 10:00 by 山田)   │
+│ 判定: OK                                │
+│ メモ: 正常に動作しています              │
+│ 写真: 3枚                               │
+└─────────────────────────────────────────┘
+
+履歴:
+- 2025-11-26 09:05 by 佐藤: NG (異音あり)
+- 2025-11-26 09:00 by 山田: OK
+
+コメント:
+- 2025-11-26 10:10 管理者: 再確認をお願いします
+- 2025-11-26 09:30 佐藤: 異音が聞こえました
+- 2025-11-26 09:10 山田: 問題ありません
+```
+
+#### 同期時の通知
+
+```
+同期完了
+✓ 3件の結果を送信しました
+✓ 2件の新しいコメントを受信しました
+⚠ タスク#123のステータスが更新されました (done → in_review)
+```
+
 ## Evidence (エビデンス) 管理とOPFS
 
 ### なぜOPFSを使用するのか
