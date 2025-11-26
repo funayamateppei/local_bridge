@@ -1,5 +1,5 @@
 import { useDesktopTaskCreate } from '@/presentation/hooks/desktop'
-import { TaskCreateView } from '@/presentation/features/admin/TaskCreateView'
+import { TaskCreateView } from '@/presentation/features/desktop/TaskCreate/TaskCreateView'
 
 export const Page = () => {
   const { areas, equipments, isLoading, createTask } = useDesktopTaskCreate()
