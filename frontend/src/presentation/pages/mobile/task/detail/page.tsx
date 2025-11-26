@@ -57,13 +57,14 @@ export const Page = () => {
       // 証拠（写真・動画）を保存
       const evidenceIds: string[] = []
       for (const file of data.files) {
-        // TODO: OPFS実装後に修正
-        const evidenceId = await inspectionRepository.saveEvidence({
-          resultId: '', // 結果IDは仮置き（本来は結果登録後に紐付け）
-          type: file.type.startsWith('video/') ? 'video' : 'image',
-          filePath: `/evidence/${Date.now()}_${file.name}`, // 仮のパス
-          mimeType: file.type,
-        })
+        const evidenceId = await inspectionRepository.saveEvidence(
+          {
+            resultId: '', // 結果IDは仮置き（本来は結果登録後に紐付け）
+            type: file.type.startsWith('video/') ? 'video' : 'image',
+            mimeType: file.type,
+          },
+          file // Blobを渡す
+        )
         evidenceIds.push(evidenceId)
       }
 

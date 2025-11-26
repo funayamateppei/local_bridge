@@ -11,6 +11,7 @@ import {
 } from '@/domain/entities'
 import type { InspectionStatus } from '@/domain/types/inspection'
 import { v4 as uuidv4 } from 'uuid'
+import { opfsStorage } from '@/infrastructure/storage/opfs'
 
 export class InspectionRepositoryImpl implements IInspectionRepository {
   // Master Data
@@ -154,18 +155,30 @@ export class InspectionRepositoryImpl implements IInspectionRepository {
     })
   }
 
-  async saveEvidence(evidence: Omit<Evidence, 'id' | 'createdAt'>): Promise<string> {
+  async saveEvidence(
+    evidence: Omit<Evidence, 'id' | 'createdAt' | 'filePath'>,
+    file: Blob
+  ): Promise<string> {
     const now = Date.now()
     const id = uuidv4()
+
+    // ファイル拡張子を取得
+    const ext = evidence.mimeType.split('/')[1] || 'bin'
+    const filePath = `/evidence/${id}.${ext}`
+
+    // OPFSにファイルを保存
+    await opfsStorage.saveFile(filePath, file)
+
+    // メタデータをIndexedDBに保存
     const newEvidence = new Evidence(
       id,
       evidence.resultId,
       evidence.type,
-      evidence.filePath,
+      filePath,
       evidence.mimeType,
       now,
-      evidence.fileSize,
-      evidence.thumbnailPath
+      file.size,
+      undefined // thumbnailPath は後で実装
     )
     await db.evidences.add({ ...newEvidence })
     return id

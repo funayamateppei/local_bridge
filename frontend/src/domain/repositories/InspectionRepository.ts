@@ -27,7 +27,10 @@ export interface IInspectionRepository {
 
   // Result & Evidence
   submitResult(result: Omit<InspectionResult, 'id' | 'createdAt'>): Promise<void>
-  saveEvidence(evidence: Omit<Evidence, 'id' | 'createdAt'>): Promise<string> // Returns evidence ID
+  saveEvidence(
+    evidence: Omit<Evidence, 'id' | 'createdAt' | 'filePath'>,
+    file: Blob
+  ): Promise<string> // Returns evidence ID
   getEvidencesByResultId(resultId: string): Promise<Evidence[]>
   getResultsByItemId(itemId: string): Promise<InspectionResult[]>
 

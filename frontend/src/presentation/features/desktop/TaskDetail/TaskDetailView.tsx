@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CheckCircle2, XCircle, HelpCircle, MessageSquare, FileImage } from 'lucide-react'
+import { CheckCircle2, XCircle, HelpCircle, MessageSquare } from 'lucide-react'
 import { Button, Textarea } from '@/presentation/components/ui'
+import { EvidenceItem } from '@/presentation/components/EvidenceItem'
 import { Routing } from '@/presentation/routes/routing'
 import type {
   InspectionItem,
@@ -116,20 +117,12 @@ export const TaskDetailView = ({
             )}
 
             {/* Evidence (Photos/Videos) */}
-            {/* TODO: OPFS実装後に有効化 */}
             {evidences[latestResult.id] && evidences[latestResult.id].length > 0 && (
               <div>
                 <p className="mb-2 text-sm font-medium text-muted-foreground">Evidence</p>
                 <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
                   {evidences[latestResult.id].map((evidence) => (
-                    <div
-                      key={evidence.id}
-                      className="relative rounded-lg border border-surface overflow-hidden bg-surface/50 p-4 text-center"
-                    >
-                      <FileImage className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
-                      <p className="text-xs text-muted-foreground">{evidence.type}</p>
-                      <p className="text-xs text-muted-foreground truncate">{evidence.filePath}</p>
-                    </div>
+                    <EvidenceItem key={evidence.id} evidence={evidence} />
                   ))}
                 </div>
               </div>
