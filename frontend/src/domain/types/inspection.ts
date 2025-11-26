@@ -46,7 +46,9 @@ export interface Evidence {
   id: string
   resultId: string // 紐づく検査結果のID
   type: 'image' | 'video'
-  data: string // Base64エンコードされたデータ
+  filePath: string // OPFSでのファイルパス
   mimeType: string // 'image/jpeg', 'video/mp4' など
   createdAt: number
+  fileSize?: number // ファイルサイズ(bytes)
+  thumbnailPath?: string // サムネイルのパス(オプション)
 }
