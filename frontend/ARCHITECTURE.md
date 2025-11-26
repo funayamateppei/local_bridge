@@ -102,15 +102,59 @@ sequenceDiagram
 
 ### データの種類と同期方向
 
-| データ種類        | 同期方向        | 説明                                 |
-| ----------------- | --------------- | ------------------------------------ |
-| Area, Equipment   | Server → Client | マスターデータ。サーバーから取得のみ |
-| InspectionTask    | Server → Client | 管理者が作成したタスク               |
-| InspectionResult  | Client → Server | 点検者が登録した結果                 |
-| InspectionComment | Bi-directional  | コメントは双方向同期                 |
-| Evidence          | Client → Server | 写真・動画はクライアントから送信     |
+| データ種類       | 同期方向        | 説明                                 |
+| ---------------- | --------------- | ------------------------------------ |
+| Area, Equipment  | Server → Client | マスターデータ。サーバーから取得のみ |
+| InspectionTask   | Server → Client | 管理者が作成したタスク               |
+| InspectionResult | Client → Server | 点検者が登録した結果                 |
 
-### 競合解決戦略
+### ドメインモデル設計
+
+#### 階層構造
+
+点検業務を「検査(Inspection)」と「検査項目(InspectionItem)」の2階層で管理します。
+
+```mermaid
+classDiagram
+    class Inspection {
+        id: UUID
+        title: String
+        status: Enum (todo, in_progress, done)
+        createdAt: Timestamp
+    }
+
+    class InspectionItem {
+        id: UUID
+        inspectionId: UUID
+        equipmentId: UUID
+        title: String
+        status: Enum (todo, done)
+        result: Enum (ok, ng)
+    }
+
+    Inspection "1" -- "*" InspectionItem : contains
+```
+
+- **Inspection (検査)**: 1回の点検業務の単位（例: 「2025年11月 定期点検」）
+- **InspectionItem (検査項目)**: 個別のチェック項目（例: 「冷蔵庫の温度確認」）
+
+#### 再検査ワークフロー
+
+NG項目があった場合、**完了した検査を戻すのではなく、新しい「再検査」を作成**します。
+
+1. **検査完了**: すべての項目をチェックし、検査を完了(Done)にする。
+2. **再検査作成**: NGだった項目のみを抽出して、新しい `Inspection` を作成する。
+   - 元の検査は「完了」状態で履歴として残る（改ざん防止）。
+   - 新しい検査は「未着手」からスタート。
+3. **共有**: 再検査には新しいIDが発行されるため、URLで簡単に共有可能。
+
+**メリット**:
+
+- **やり残し防止**: 再検査はNG項目だけがリストアップされるため、検査員は集中して作業できる。
+- **履歴管理**: 過去の検査結果（NGだった事実）が上書きされずに残る。
+- **進捗管理**: 「再検査」という独立したタスクとして管理できる。
+
+### Evidence (エビデンス) 管理とOPFS
 
 複数の点検者が同じタスクを同時に実施する可能性があるため、競合解決戦略を定義します。
 
