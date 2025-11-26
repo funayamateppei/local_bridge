@@ -14,6 +14,27 @@ export interface Setting {
   value: unknown
 }
 
+export type SyncQueueItemType =
+  | 'inspection'
+  | 'inspectionItem'
+  | 'result'
+  | 'comment'
+  | 'evidence'
+
+export type SyncQueueStatus = 'pending' | 'syncing' | 'failed'
+
+export interface SyncQueueItem {
+  id: string
+  type: SyncQueueItemType
+  entityId: string
+  payload: unknown
+  status: SyncQueueStatus
+  retryCount: number
+  createdAt: number
+  lastAttemptAt?: number
+  errorMessage?: string
+}
+
 export class LocalBridgeDatabase extends Dexie {
   settings!: Table<Setting>
 
@@ -25,6 +46,9 @@ export class LocalBridgeDatabase extends Dexie {
   inspectionResults!: Table<InspectionResult>
   inspectionComments!: Table<InspectionComment>
   evidences!: Table<Evidence>
+
+  // Sync Queue
+  syncQueue!: Table<SyncQueueItem>
 
   constructor() {
     super('LocalBridgeDB')
@@ -50,6 +74,11 @@ export class LocalBridgeDatabase extends Dexie {
       inspectionItems: 'id, inspectionId, areaId, equipmentId, status, updatedAt',
       inspectionResults: 'id, inspectionItemId',
       inspectionComments: 'id, inspectionItemId',
+    })
+
+    // v5: 同期キューの追加
+    this.version(5).stores({
+      syncQueue: 'id, type, entityId, status, createdAt',
     })
   }
 }

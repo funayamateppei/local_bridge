@@ -1,6 +1,14 @@
-import { db } from '@/infrastructure/db'
+import { db, type SyncQueueItem } from '@/infrastructure/db'
+import { syncQueueService } from '@/infrastructure/services/SyncQueueService'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
+
+export interface SyncResult {
+  success: boolean
+  syncedCount: number
+  failedCount: number
+  errors: string[]
+}
 
 export class SyncService {
   /**
@@ -33,167 +41,201 @@ export class SyncService {
   }
 
   /**
-   * ローカルの変更をサーバーに送信
+   * 同期キューに基づいてローカルの変更をサーバーに送信
    */
-  async pushLocalChanges(): Promise<void> {
-    try {
-      await this.pushInspections()
-      await this.pushInspectionItems()
-      await this.pushResults()
-      await this.pushComments()
-      await this.pushEvidences()
+  async pushLocalChanges(): Promise<SyncResult> {
+    const result: SyncResult = {
+      success: true,
+      syncedCount: 0,
+      failedCount: 0,
+      errors: [],
+    }
 
-      console.log('Local changes pushed successfully')
+    try {
+      // 同期順序: inspection → inspectionItem → result → comment → evidence
+      await this.pushQueuedItems('inspection', result)
+      await this.pushQueuedItems('inspectionItem', result)
+      await this.pushQueuedItems('result', result)
+      await this.pushQueuedItems('comment', result)
+      await this.pushQueuedItems('evidence', result)
+
+      console.log(`Sync completed: ${result.syncedCount} synced, ${result.failedCount} failed`)
     } catch (error) {
       console.error('Failed to push local changes:', error)
-      throw error
+      result.success = false
+      result.errors.push(error instanceof Error ? error.message : 'Unknown error')
     }
+
+    result.success = result.failedCount === 0
+    return result
   }
 
-  private async pushInspections(): Promise<void> {
-    const inspections = await db.inspections.toArray()
-
-    for (const inspection of inspections) {
-      try {
-        const response = await fetch(`${API_BASE_URL}/inspections`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: inspection.id,
-            title: inspection.title,
-            status: this.mapStatusToBackend(inspection.status),
-            description: inspection.description,
-            createdAt: inspection.createdAt,
-            updatedAt: inspection.updatedAt,
-          }),
-        })
-
-        if (!response.ok && response.status !== 409) {
-          // 409 Conflict は既に存在する場合なので無視
-          throw new Error(`Failed to push inspection ${inspection.id}`)
-        }
-      } catch (error) {
-        console.error(`Error pushing inspection ${inspection.id}:`, error)
-        // 個別のエラーは記録するが、全体の同期は続行
-      }
-    }
-  }
-
-  private async pushInspectionItems(): Promise<void> {
-    const items = await db.inspectionItems.toArray()
+  /**
+   * 特定タイプのキューアイテムを同期
+   */
+  private async pushQueuedItems(
+    type: SyncQueueItem['type'],
+    result: SyncResult
+  ): Promise<void> {
+    const items = await syncQueueService.getPendingItemsByType(type)
 
     for (const item of items) {
       try {
-        const response = await fetch(`${API_BASE_URL}/inspections/items`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: item.id,
-            inspectionId: item.inspectionId,
-            title: item.title,
-            description: item.description,
-            areaId: item.areaId,
-            equipmentId: item.equipmentId,
-            status: this.mapStatusToBackend(item.status),
-            createdAt: item.createdAt,
-            updatedAt: item.updatedAt,
-          }),
-        })
-
-        if (!response.ok && response.status !== 409) {
-          throw new Error(`Failed to push inspection item ${item.id}`)
-        }
+        await syncQueueService.updateStatus(item.id, 'syncing')
+        await this.pushSingleItem(item)
+        await syncQueueService.markAsSynced(item.id)
+        result.syncedCount++
       } catch (error) {
-        console.error(`Error pushing inspection item ${item.id}:`, error)
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        await syncQueueService.updateStatus(item.id, 'failed', errorMessage)
+        result.failedCount++
+        result.errors.push(`${type}[${item.entityId}]: ${errorMessage}`)
+        console.error(`Error pushing ${type} ${item.entityId}:`, error)
       }
     }
   }
 
-  private async pushResults(): Promise<void> {
-    const results = await db.inspectionResults.toArray()
+  /**
+   * 単一のキューアイテムを同期
+   */
+  private async pushSingleItem(item: SyncQueueItem): Promise<void> {
+    const payload = item.payload as Record<string, unknown>
 
-    for (const result of results) {
-      try {
-        const response = await fetch(`${API_BASE_URL}/inspections/results`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: result.id,
-            inspectionItemId: result.inspectionItemId,
-            verdict: this.mapVerdictToBackend(result.verdict),
-            note: result.note,
-            evidenceIds: result.evidenceIds,
-            createdBy: result.createdBy,
-            createdAt: result.createdAt,
-          }),
-        })
-
-        if (!response.ok && response.status !== 409) {
-          throw new Error(`Failed to push result ${result.id}`)
-        }
-      } catch (error) {
-        console.error(`Error pushing result ${result.id}:`, error)
-      }
+    switch (item.type) {
+      case 'inspection':
+        await this.pushInspection(payload)
+        break
+      case 'inspectionItem':
+        await this.pushInspectionItem(payload)
+        break
+      case 'result':
+        await this.pushResult(payload)
+        break
+      case 'comment':
+        await this.pushComment(payload)
+        break
+      case 'evidence':
+        await this.pushEvidence(payload)
+        break
     }
   }
 
-  private async pushComments(): Promise<void> {
-    const comments = await db.inspectionComments.toArray()
+  private async pushInspection(payload: Record<string, unknown>): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/inspections`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: payload.id,
+        title: payload.title,
+        status: this.mapStatusToBackend(payload.status as string),
+        description: payload.description,
+        createdAt: payload.createdAt,
+        updatedAt: payload.updatedAt,
+      }),
+    })
 
-    for (const comment of comments) {
-      try {
-        const response = await fetch(`${API_BASE_URL}/inspections/comments`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: comment.id,
-            inspectionItemId: comment.inspectionItemId,
-            content: comment.content,
-            createdBy: comment.createdBy,
-            isSystemComment: comment.isSystemComment,
-            createdAt: comment.createdAt,
-          }),
-        })
-
-        if (!response.ok && response.status !== 409) {
-          throw new Error(`Failed to push comment ${comment.id}`)
-        }
-      } catch (error) {
-        console.error(`Error pushing comment ${comment.id}:`, error)
-      }
+    if (!response.ok && response.status !== 409) {
+      throw new Error(`Failed to push inspection ${payload.id}`)
     }
   }
 
-  private async pushEvidences(): Promise<void> {
-    const evidences = await db.evidences.toArray()
+  private async pushInspectionItem(payload: Record<string, unknown>): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/inspections/items`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: payload.id,
+        inspectionId: payload.inspectionId,
+        title: payload.title,
+        description: payload.description,
+        areaId: payload.areaId,
+        equipmentId: payload.equipmentId,
+        status: this.mapStatusToBackend(payload.status as string),
+        createdAt: payload.createdAt,
+        updatedAt: payload.updatedAt,
+      }),
+    })
 
-    for (const evidence of evidences) {
-      try {
-        // TODO: S3 Presigned URL取得とアップロード実装
-        // 現在はメタデータのみ送信
-        const response = await fetch(`${API_BASE_URL}/inspections/evidences`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: evidence.id,
-            resultId: evidence.resultId,
-            type: this.mapEvidenceTypeToBackend(evidence.type),
-            filePath: evidence.filePath,
-            mimeType: evidence.mimeType,
-            fileSize: evidence.fileSize,
-            thumbnailPath: evidence.thumbnailPath,
-            s3Key: null, // TODO: S3アップロード後に設定
-            createdAt: evidence.createdAt,
-          }),
-        })
-
-        if (!response.ok && response.status !== 409) {
-          throw new Error(`Failed to push evidence ${evidence.id}`)
-        }
-      } catch (error) {
-        console.error(`Error pushing evidence ${evidence.id}:`, error)
-      }
+    if (!response.ok && response.status !== 409) {
+      throw new Error(`Failed to push inspection item ${payload.id}`)
     }
+  }
+
+  private async pushResult(payload: Record<string, unknown>): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/inspections/results`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: payload.id,
+        inspectionItemId: payload.inspectionItemId,
+        verdict: this.mapVerdictToBackend(payload.verdict as string),
+        note: payload.note,
+        evidenceIds: payload.evidenceIds,
+        createdBy: payload.createdBy,
+        createdAt: payload.createdAt,
+      }),
+    })
+
+    if (!response.ok && response.status !== 409) {
+      throw new Error(`Failed to push result ${payload.id}`)
+    }
+  }
+
+  private async pushComment(payload: Record<string, unknown>): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/inspections/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: payload.id,
+        inspectionItemId: payload.inspectionItemId,
+        content: payload.content,
+        createdBy: payload.createdBy,
+        isSystemComment: payload.isSystemComment,
+        createdAt: payload.createdAt,
+      }),
+    })
+
+    if (!response.ok && response.status !== 409) {
+      throw new Error(`Failed to push comment ${payload.id}`)
+    }
+  }
+
+  private async pushEvidence(payload: Record<string, unknown>): Promise<void> {
+    // TODO: S3 Presigned URL取得とアップロード実装
+    // 現在はメタデータのみ送信
+    const response = await fetch(`${API_BASE_URL}/inspections/evidences`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: payload.id,
+        resultId: payload.resultId,
+        type: this.mapEvidenceTypeToBackend(payload.type as string),
+        filePath: payload.filePath,
+        mimeType: payload.mimeType,
+        fileSize: payload.fileSize,
+        thumbnailPath: payload.thumbnailPath,
+        s3Key: null, // TODO: S3アップロード後に設定
+        createdAt: payload.createdAt,
+      }),
+    })
+
+    if (!response.ok && response.status !== 409) {
+      throw new Error(`Failed to push evidence ${payload.id}`)
+    }
+  }
+
+  /**
+   * 未同期アイテム数を取得
+   */
+  async getPendingCount(): Promise<number> {
+    return syncQueueService.getPendingCount()
+  }
+
+  /**
+   * 失敗したアイテムをリセット
+   */
+  async resetFailedItems(): Promise<void> {
+    return syncQueueService.resetFailedItems()
   }
 
   /**
@@ -231,12 +273,12 @@ export class SyncService {
   /**
    * 完全同期を実行
    */
-  async fullSync(): Promise<void> {
+  async fullSync(): Promise<SyncResult> {
     // マスターデータを取得
     await this.syncMasterData()
 
     // ローカルの変更を送信
-    await this.pushLocalChanges()
+    return this.pushLocalChanges()
   }
 }
 

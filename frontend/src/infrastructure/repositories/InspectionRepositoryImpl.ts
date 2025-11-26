@@ -12,6 +12,7 @@ import {
 import type { InspectionStatus } from '@/domain/types/inspection'
 import { v4 as uuidv4 } from 'uuid'
 import { opfsStorage } from '@/infrastructure/storage/opfs'
+import { syncQueueService } from '@/infrastructure/services/SyncQueueService'
 
 export class InspectionRepositoryImpl implements IInspectionRepository {
   // Master Data
@@ -39,7 +40,12 @@ export class InspectionRepositoryImpl implements IInspectionRepository {
       now,
       inspection.description
     )
+    // 1. 即座にローカルDBに保存（楽観的更新）
     await db.inspections.add({ ...newInspection })
+
+    // 2. 同期キューに追加（後で同期）
+    await syncQueueService.enqueue('inspection', id, { ...newInspection })
+
     return id
   }
 
@@ -68,8 +74,9 @@ export class InspectionRepositoryImpl implements IInspectionRepository {
     item: Omit<InspectionItem, 'id' | 'createdAt' | 'updatedAt'>
   ): Promise<void> {
     const now = Date.now()
+    const id = uuidv4()
     const newItem = new InspectionItem(
-      uuidv4(),
+      id,
       item.inspectionId,
       item.title,
       item.areaId,
@@ -79,7 +86,11 @@ export class InspectionRepositoryImpl implements IInspectionRepository {
       now,
       item.description
     )
+    // 1. 即座にローカルDBに保存（楽観的更新）
     await db.inspectionItems.add({ ...newItem })
+
+    // 2. 同期キューに追加（後で同期）
+    await syncQueueService.enqueue('inspectionItem', id, { ...newItem })
   }
 
   async getItemsByInspectionId(inspectionId: string): Promise<InspectionItem[]> {
@@ -137,8 +148,9 @@ export class InspectionRepositoryImpl implements IInspectionRepository {
   // Result & Evidence
   async submitResult(result: Omit<InspectionResult, 'id' | 'createdAt'>): Promise<void> {
     const now = Date.now()
+    const id = uuidv4()
     const newResult = new InspectionResult(
-      uuidv4(),
+      id,
       result.inspectionItemId,
       result.verdict,
       result.evidenceIds,
@@ -146,13 +158,23 @@ export class InspectionRepositoryImpl implements IInspectionRepository {
       result.createdBy,
       result.note
     )
+    // 1. 即座にローカルDBに保存（楽観的更新）
     await db.inspectionResults.add({ ...newResult })
+
+    // 2. 同期キューに追加（後で同期）
+    await syncQueueService.enqueue('result', id, { ...newResult })
 
     // Update item status
     await db.inspectionItems.update(result.inspectionItemId, {
       status: 'in_review',
       updatedAt: now,
     })
+
+    // Item status update も同期キューに追加
+    const updatedItem = await db.inspectionItems.get(result.inspectionItemId)
+    if (updatedItem) {
+      await syncQueueService.enqueue('inspectionItem', updatedItem.id, { ...updatedItem })
+    }
   }
 
   async saveEvidence(
@@ -180,7 +202,12 @@ export class InspectionRepositoryImpl implements IInspectionRepository {
       file.size,
       undefined // thumbnailPath は後で実装
     )
+    // 1. 即座にローカルDBに保存（楽観的更新）
     await db.evidences.add({ ...newEvidence })
+
+    // 2. 同期キューに追加（後で同期）
+    await syncQueueService.enqueue('evidence', id, { ...newEvidence })
+
     return id
   }
 
@@ -254,15 +281,20 @@ export class InspectionRepositoryImpl implements IInspectionRepository {
   // Comment
   async addComment(comment: Omit<InspectionComment, 'id' | 'createdAt'>): Promise<void> {
     const now = Date.now()
+    const id = uuidv4()
     const newComment = new InspectionComment(
-      uuidv4(),
+      id,
       comment.inspectionItemId,
       comment.content,
       now,
       comment.createdBy,
       comment.isSystemComment
     )
+    // 1. 即座にローカルDBに保存（楽観的更新）
     await db.inspectionComments.add({ ...newComment })
+
+    // 2. 同期キューに追加（後で同期）
+    await syncQueueService.enqueue('comment', id, { ...newComment })
   }
 
   async getCommentsByItemId(itemId: string): Promise<InspectionComment[]> {
@@ -282,17 +314,33 @@ export class InspectionRepositoryImpl implements IInspectionRepository {
 
   // Status Update
   async updateItemStatus(itemId: string, status: InspectionStatus): Promise<void> {
+    const now = Date.now()
+    // 1. 即座にローカルDBに保存（楽観的更新）
     await db.inspectionItems.update(itemId, {
       status,
-      updatedAt: Date.now(),
+      updatedAt: now,
     })
+
+    // 2. 同期キューに追加（後で同期）
+    const updatedItem = await db.inspectionItems.get(itemId)
+    if (updatedItem) {
+      await syncQueueService.enqueue('inspectionItem', itemId, { ...updatedItem })
+    }
   }
 
   async updateInspectionStatus(inspectionId: string, status: InspectionStatus): Promise<void> {
+    const now = Date.now()
+    // 1. 即座にローカルDBに保存（楽観的更新）
     await db.inspections.update(inspectionId, {
       status,
-      updatedAt: Date.now(),
+      updatedAt: now,
     })
+
+    // 2. 同期キューに追加（後で同期）
+    const updatedInspection = await db.inspections.get(inspectionId)
+    if (updatedInspection) {
+      await syncQueueService.enqueue('inspection', inspectionId, { ...updatedInspection })
+    }
   }
 }
 
