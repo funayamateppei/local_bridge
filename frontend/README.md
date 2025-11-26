@@ -155,3 +155,9 @@ src/
 
 - `/` - ダッシュボード(ロール選択)
 - `*` - 404 Not Found
+
+## 📚 詳細ドキュメント
+
+- [ARCHITECTURE.md](./ARCHITECTURE.md) - アーキテクチャ設計の詳細
+- [SYNC_LOGIC.md](./SYNC_LOGIC.md) - 同期ロジックの詳細実装
+- [Plan.md](./Plan.md) - 開発計画
