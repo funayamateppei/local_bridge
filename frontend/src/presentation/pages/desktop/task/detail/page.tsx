@@ -4,7 +4,7 @@ import { inspectionRepository } from '@/infrastructure/repositories/InspectionRe
 import { TaskDetailView } from '@/presentation/features/desktop/TaskDetail/TaskDetailView'
 import { useAuth } from '@/presentation/hooks/auth/useAuth'
 import type {
-  InspectionTask,
+  InspectionItem,
   Area,
   Equipment,
   InspectionResult,
@@ -18,7 +18,7 @@ export const Page = () => {
   const navigate = useNavigate()
   const { username } = useAuth()
 
-  const [task, setTask] = useState<InspectionTask | null>(null)
+  const [task, setTask] = useState<InspectionItem | null>(null)
   const [area, setArea] = useState<Area | null>(null)
   const [equipment, setEquipment] = useState<Equipment | null>(null)
   const [results, setResults] = useState<InspectionResult[]>([])
@@ -31,7 +31,7 @@ export const Page = () => {
       if (!taskId) return
 
       try {
-        const taskData = await inspectionRepository.getTaskById(taskId)
+        const taskData = await inspectionRepository.getItemById(taskId)
         if (!taskData) {
           alert('Task not found')
           navigate(Routing.Desktop.Task.path)
@@ -47,10 +47,10 @@ export const Page = () => {
         const foundEquipment = equipments.find((e) => e.id === taskData.equipmentId)
         setEquipment(foundEquipment || null)
 
-        const resultsData = await inspectionRepository.getResultsByTaskId(taskId)
+        const resultsData = await inspectionRepository.getResultsByItemId(taskId)
         setResults(resultsData)
 
-        const commentsData = await inspectionRepository.getCommentsByTaskId(taskId)
+        const commentsData = await inspectionRepository.getCommentsByItemId(taskId)
         setComments(commentsData)
 
         // 各結果の証拠を取得
@@ -73,12 +73,12 @@ export const Page = () => {
     setIsLoading(true)
     try {
       await inspectionRepository.addComment({
-        taskId,
+        inspectionItemId: taskId,
         content,
         createdBy: username, // 実際のユーザー名を使用
       })
       // コメントリストを再取得
-      const commentsData = await inspectionRepository.getCommentsByTaskId(taskId)
+      const commentsData = await inspectionRepository.getCommentsByItemId(taskId)
       setComments(commentsData)
     } catch (error) {
       console.error('Failed to add comment:', error)
@@ -92,9 +92,9 @@ export const Page = () => {
     if (!taskId || !username) return
     setIsLoading(true)
     try {
-      await inspectionRepository.updateTaskStatus(taskId, 'done')
+      await inspectionRepository.updateItemStatus(taskId, 'done')
       await inspectionRepository.addComment({
-        taskId,
+        inspectionItemId: taskId,
         content: 'Task approved and marked as done.',
         createdBy: username,
         isSystemComment: true,
@@ -113,9 +113,9 @@ export const Page = () => {
     if (!taskId || !username) return
     setIsLoading(true)
     try {
-      await inspectionRepository.updateTaskStatus(taskId, 'correction_needed')
+      await inspectionRepository.updateItemStatus(taskId, 'correction_needed')
       await inspectionRepository.addComment({
-        taskId,
+        inspectionItemId: taskId,
         content: comment,
         createdBy: username,
       })

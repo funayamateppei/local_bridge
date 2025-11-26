@@ -2,7 +2,8 @@ import Dexie, { type Table } from 'dexie'
 import type {
   Area,
   Equipment,
-  InspectionTask,
+  Inspection,
+  InspectionItem,
   InspectionResult,
   InspectionComment,
   Evidence,
@@ -19,7 +20,8 @@ export class LocalBridgeDatabase extends Dexie {
   // Inspection App Tables
   areas!: Table<Area>
   equipments!: Table<Equipment>
-  inspectionTasks!: Table<InspectionTask>
+  inspections!: Table<Inspection>
+  inspectionItems!: Table<InspectionItem>
   inspectionResults!: Table<InspectionResult>
   inspectionComments!: Table<InspectionComment>
   evidences!: Table<Evidence>
@@ -41,6 +43,13 @@ export class LocalBridgeDatabase extends Dexie {
 
     this.version(3).stores({
       evidences: 'id, resultId',
+    })
+
+    this.version(4).stores({
+      inspections: 'id, status, updatedAt',
+      inspectionItems: 'id, inspectionId, areaId, equipmentId, status, updatedAt',
+      inspectionResults: 'id, inspectionItemId',
+      inspectionComments: 'id, inspectionItemId',
     })
   }
 }

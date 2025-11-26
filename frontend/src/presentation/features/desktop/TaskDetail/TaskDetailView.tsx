@@ -4,7 +4,7 @@ import { CheckCircle2, XCircle, HelpCircle, MessageSquare, FileImage } from 'luc
 import { Button, Textarea } from '@/presentation/components/ui'
 import { Routing } from '@/presentation/routes/routing'
 import type {
-  InspectionTask,
+  InspectionItem,
   Area,
   Equipment,
   InspectionResult,
@@ -13,7 +13,7 @@ import type {
 } from '@/domain/types/inspection'
 
 interface TaskDetailViewProps {
-  task: InspectionTask
+  task: InspectionItem
   area: Area
   equipment: Equipment
   results: InspectionResult[]
@@ -116,6 +116,7 @@ export const TaskDetailView = ({
             )}
 
             {/* Evidence (Photos/Videos) */}
+            {/* TODO: OPFS実装後に有効化 */}
             {evidences[latestResult.id] && evidences[latestResult.id].length > 0 && (
               <div>
                 <p className="mb-2 text-sm font-medium text-muted-foreground">Evidence</p>
@@ -123,24 +124,11 @@ export const TaskDetailView = ({
                   {evidences[latestResult.id].map((evidence) => (
                     <div
                       key={evidence.id}
-                      className="relative rounded-lg border border-surface overflow-hidden"
+                      className="relative rounded-lg border border-surface overflow-hidden bg-surface/50 p-4 text-center"
                     >
-                      {evidence.type === 'image' ? (
-                        <img
-                          src={`data:${evidence.mimeType};base64,${evidence.data}`}
-                          alt="Evidence"
-                          className="h-32 w-full object-cover"
-                        />
-                      ) : (
-                        <video
-                          src={`data:${evidence.mimeType};base64,${evidence.data}`}
-                          className="h-32 w-full object-cover"
-                          controls
-                        />
-                      )}
-                      <div className="absolute bottom-1 right-1 rounded bg-black/50 p-1">
-                        <FileImage className="h-3 w-3 text-white" />
-                      </div>
+                      <FileImage className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
+                      <p className="text-xs text-muted-foreground">{evidence.type}</p>
+                      <p className="text-xs text-muted-foreground truncate">{evidence.filePath}</p>
                     </div>
                   ))}
                 </div>

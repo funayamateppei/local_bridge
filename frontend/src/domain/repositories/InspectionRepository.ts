@@ -2,24 +2,40 @@ import type { InspectionStatus } from '@/domain/types/inspection'
 import type {
   Area,
   Equipment,
-  InspectionTask,
+  Inspection,
+  InspectionItem,
   InspectionResult,
   Evidence,
   InspectionComment,
 } from '@/domain/entities'
 
 export interface IInspectionRepository {
+  // Master Data
   getAreas(): Promise<Area[]>
   getEquipments(areaId: string): Promise<Equipment[]>
-  createTask(task: Omit<InspectionTask, 'id' | 'createdAt' | 'updatedAt'>): Promise<void>
-  getTasksByArea(areaId: string): Promise<InspectionTask[]>
-  getAllTasks(): Promise<InspectionTask[]>
-  getTaskById(id: string): Promise<InspectionTask | undefined>
+
+  // Inspection
+  createInspection(inspection: Omit<Inspection, 'id' | 'createdAt' | 'updatedAt'>): Promise<string>
+  getAllInspections(): Promise<Inspection[]>
+  getInspectionById(id: string): Promise<Inspection | undefined>
+
+  // InspectionItem
+  createInspectionItem(item: Omit<InspectionItem, 'id' | 'createdAt' | 'updatedAt'>): Promise<void>
+  getItemsByInspectionId(inspectionId: string): Promise<InspectionItem[]>
+  getAllItems(): Promise<InspectionItem[]>
+  getItemById(id: string): Promise<InspectionItem | undefined>
+
+  // Result & Evidence
   submitResult(result: Omit<InspectionResult, 'id' | 'createdAt'>): Promise<void>
   saveEvidence(evidence: Omit<Evidence, 'id' | 'createdAt'>): Promise<string> // Returns evidence ID
   getEvidencesByResultId(resultId: string): Promise<Evidence[]>
-  getResultsByTaskId(taskId: string): Promise<InspectionResult[]>
+  getResultsByItemId(itemId: string): Promise<InspectionResult[]>
+
+  // Comment
   addComment(comment: Omit<InspectionComment, 'id' | 'createdAt'>): Promise<void>
-  getCommentsByTaskId(taskId: string): Promise<InspectionComment[]>
-  updateTaskStatus(taskId: string, status: InspectionStatus): Promise<void>
+  getCommentsByItemId(itemId: string): Promise<InspectionComment[]>
+
+  // Status Update
+  updateItemStatus(itemId: string, status: InspectionStatus): Promise<void>
+  updateInspectionStatus(inspectionId: string, status: InspectionStatus): Promise<void>
 }

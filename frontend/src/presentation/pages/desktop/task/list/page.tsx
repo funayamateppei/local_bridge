@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
 import { inspectionRepository } from '@/infrastructure/repositories/InspectionRepositoryImpl'
 import { TaskListView } from '@/presentation/features/desktop/TaskList/TaskListView'
-import type { InspectionTask, Area, Equipment } from '@/domain/types/inspection'
+import type { InspectionItem, Area, Equipment } from '@/domain/types/inspection'
 
 export const Page = () => {
-  const [tasks, setTasks] = useState<InspectionTask[]>([])
+  const [tasks, setTasks] = useState<InspectionItem[]>([])
   const [areas, setAreas] = useState<Record<string, Area>>({})
   const [equipments, setEquipments] = useState<Record<string, Equipment>>({})
   const [isLoading, setIsLoading] = useState(true)
@@ -13,7 +13,7 @@ export const Page = () => {
     const loadData = async () => {
       try {
         const [tasksData, areasData] = await Promise.all([
-          inspectionRepository.getAllTasks(),
+          inspectionRepository.getAllItems(),
           inspectionRepository.getAreas(),
         ])
 

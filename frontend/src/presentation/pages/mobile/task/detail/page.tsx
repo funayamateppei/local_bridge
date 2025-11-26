@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { inspectionRepository } from '@/infrastructure/repositories/InspectionRepositoryImpl'
 import { InspectionView } from '@/presentation/features/mobile/Inspection/InspectionView'
 import { useAuth } from '@/presentation/hooks/auth/useAuth'
-import type { InspectionTask, Area, Equipment, InspectionVerdict } from '@/domain/types/inspection'
+import type { InspectionItem, Area, Equipment, InspectionVerdict } from '@/domain/types/inspection'
 import { Routing } from '@/presentation/routes/routing'
 
 export const Page = () => {
@@ -11,7 +11,7 @@ export const Page = () => {
   const navigate = useNavigate()
   const { username } = useAuth()
 
-  const [task, setTask] = useState<InspectionTask | null>(null)
+  const [task, setTask] = useState<InspectionItem | null>(null)
   const [area, setArea] = useState<Area | null>(null)
   const [equipment, setEquipment] = useState<Equipment | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -21,7 +21,7 @@ export const Page = () => {
       if (!taskId) return
 
       try {
-        const taskData = await inspectionRepository.getTaskById(taskId)
+        const taskData = await inspectionRepository.getItemById(taskId)
         if (!taskData) {
           alert('Task not found')
           navigate(Routing.Mobile.Home.path)
@@ -57,12 +57,11 @@ export const Page = () => {
       // 証拠（写真・動画）を保存
       const evidenceIds: string[] = []
       for (const file of data.files) {
-        // FileをBase64に変換
-        const base64 = await fileToBase64(file)
+        // TODO: OPFS実装後に修正
         const evidenceId = await inspectionRepository.saveEvidence({
           resultId: '', // 結果IDは仮置き（本来は結果登録後に紐付け）
           type: file.type.startsWith('video/') ? 'video' : 'image',
-          data: base64,
+          filePath: `/evidence/${Date.now()}_${file.name}`, // 仮のパス
           mimeType: file.type,
         })
         evidenceIds.push(evidenceId)
@@ -70,7 +69,7 @@ export const Page = () => {
 
       // 結果を保存
       await inspectionRepository.submitResult({
-        taskId,
+        inspectionItemId: taskId,
         verdict: data.verdict,
         note: data.note,
         evidenceIds,
@@ -85,19 +84,6 @@ export const Page = () => {
     } finally {
       setIsLoading(false)
     }
-  }
-
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.readAsDataURL(file)
-      reader.onload = () => {
-        const result = reader.result as string
-        // "data:image/jpeg;base64,..." から "base64,..." 部分だけを抽出
-        resolve(result.split(',')[1])
-      }
-      reader.onerror = reject
-    })
   }
 
   if (!task || !area || !equipment) {

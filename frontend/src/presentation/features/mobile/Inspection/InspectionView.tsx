@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { CheckCircle, XCircle, HelpCircle, Trash2, type LucideIcon } from 'lucide-react'
 import { Button, Textarea, CameraInput } from '@/presentation/components/ui'
-import type { InspectionTask, Area, Equipment, InspectionVerdict } from '@/domain/types/inspection'
+import type { InspectionItem, Area, Equipment, InspectionVerdict } from '@/domain/types/inspection'
 import { cn } from '@/lib/utils'
 
 interface CapturedFile {
@@ -11,7 +11,7 @@ interface CapturedFile {
 }
 
 interface InspectionViewProps {
-  task: InspectionTask
+  task: InspectionItem
   area: Area
   equipment: Equipment
   onSubmit: (data: { verdict: InspectionVerdict; note: string; files: File[] }) => void

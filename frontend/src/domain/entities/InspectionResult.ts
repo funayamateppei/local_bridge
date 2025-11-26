@@ -2,7 +2,7 @@ import type { InspectionVerdict } from '@/domain/types/inspection'
 
 export class InspectionResult {
   readonly id: string
-  readonly taskId: string
+  readonly inspectionItemId: string
   readonly verdict: InspectionVerdict
   readonly evidenceIds: string[]
   readonly createdAt: number
@@ -11,7 +11,7 @@ export class InspectionResult {
 
   constructor(
     id: string,
-    taskId: string,
+    inspectionItemId: string,
     verdict: InspectionVerdict,
     evidenceIds: string[],
     createdAt: number,
@@ -19,7 +19,7 @@ export class InspectionResult {
     note?: string
   ) {
     this.id = id
-    this.taskId = taskId
+    this.inspectionItemId = inspectionItemId
     this.verdict = verdict
     this.evidenceIds = evidenceIds
     this.createdAt = createdAt

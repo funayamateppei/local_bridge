@@ -12,8 +12,18 @@ export interface Equipment {
   areaId: string
 }
 
-export interface InspectionTask {
+export interface Inspection {
   id: string
+  title: string
+  status: InspectionStatus
+  createdAt: number
+  updatedAt: number
+  description?: string
+}
+
+export interface InspectionItem {
+  id: string
+  inspectionId: string
   title: string
   description?: string
   areaId: string
@@ -25,7 +35,7 @@ export interface InspectionTask {
 
 export interface InspectionResult {
   id: string
-  taskId: string
+  inspectionItemId: string
   verdict: InspectionVerdict
   note?: string
   evidenceIds: string[] // 写真などのID
@@ -35,7 +45,7 @@ export interface InspectionResult {
 
 export interface InspectionComment {
   id: string
-  taskId: string
+  inspectionItemId: string
   content: string
   createdAt: number
   createdBy: string // ユーザーID

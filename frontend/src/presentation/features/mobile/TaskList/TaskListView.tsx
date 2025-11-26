@@ -1,10 +1,10 @@
 import { Link } from 'react-router-dom'
 import { CheckCircle2, AlertCircle, Clock, ArrowRight } from 'lucide-react'
-import type { InspectionTask, Area, Equipment } from '@/domain/types/inspection'
+import type { InspectionItem, Area, Equipment } from '@/domain/types/inspection'
 import { Routing } from '@/presentation/routes/routing'
 
 interface TaskListViewProps {
-  tasks: InspectionTask[]
+  tasks: InspectionItem[]
   areas: Record<string, Area>
   equipments: Record<string, Equipment>
   isLoading: boolean
