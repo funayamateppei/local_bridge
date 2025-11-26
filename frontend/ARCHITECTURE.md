@@ -26,7 +26,8 @@ graph TD
     - `Evidence` - エビデンス(写真・動画)
   - **Value Objects**: 値によって識別されるオブジェクト(例: `InspectionStatus`, `InspectionVerdict`)
   - **Repository Interfaces**: データの永続化に関する抽象定義
-    - `IInspectionRepository` - 点検関連データの操作
+    - `IMobileInspectionRepository` - 点検関連データの操作（Mobile用、IndexedDB）
+    - `IDesktopInspectionRepository` - 点検関連データの操作（Desktop用、API）
     - `IAuthRepository` - 認証関連データの操作
 
 ### 2. Application Layer (`src/application`)
@@ -41,8 +42,12 @@ graph TD
 - **役割**: 技術的な詳細の実装。
 - **構成要素**:
   - **Repositories**: Domain層で定義されたインターフェースの実装
-    - `InspectionRepositoryImpl` - IndexedDB(Dexie)を使用した実装
+    - `MobileInspectionRepositoryImpl` - IndexedDB(Dexie)を使用した実装（Mobile用、オフライン対応）
+    - `DesktopInspectionRepositoryImpl` - API経由の実装（Desktop用、オンライン専用）
     - `AuthRepositoryImpl` - 認証APIクライアントを使用した実装
+  - **Services**:
+    - `SyncService` - 同期処理
+    - `SyncQueueService` - 同期キュー管理
   - **External Services**:
     - API クライアント(`src/infrastructure/api/client.ts`)
     - IndexedDB (Dexie) (`src/infrastructure/db.ts`)
@@ -54,12 +59,15 @@ graph TD
 - **構成要素**:
   - **Pages**: ルーティングに対応するページコンポーネント
     - `auth/*` - 認証関連ページ(login, register)
-    - `desktop/*` - デスクトップ向けページ(管理者用)
-    - `mobile/*` - モバイル向けページ(点検者用)
+    - `desktop/*` - デスクトップ向けページ(管理者用、オンライン専用)
+    - `mobile/*` - モバイル向けページ(点検者用、オフライン対応)
   - **Features**: ページで使用される機能コンポーネント
   - **Components**: 再利用可能なUIコンポーネント
   - **Stores**: Zustand によるグローバル状態管理。Use Case を呼び出し、結果を Store に反映する。
   - **Hooks**: UI ロジックの切り出し。
+    - `desktop/useDesktopInspection.ts` - Desktop用データ取得（API経由）
+    - `mobile/useMobileInspection.ts` - Mobile用データ取得（IndexedDB経由）
+    - `useSync.ts` - 同期機能（Mobile用）
 
 ## ID Generation Strategy
 
@@ -83,6 +91,19 @@ graph TD
 3. **同期タイミング**: ユーザーが同期ボタンを押した時のみ実行
 
 **詳細な同期ロジックについては [SYNC_LOGIC.md](./SYNC_LOGIC.md) を参照してください。**
+
+### Desktop vs Mobile アーキテクチャの違い
+
+| 項目 | Desktop | Mobile |
+|------|---------|--------|
+| **対象ユーザー** | 管理者 | 点検者 |
+| **ネットワーク** | オンライン専用 | オフライン対応 |
+| **データソース** | API直接呼び出し | IndexedDB (Local-First) |
+| **Repository** | `DesktopInspectionRepositoryImpl` | `MobileInspectionRepositoryImpl` |
+| **同期** | 不要（常時オンライン） | 手動同期ボタン |
+| **ファイル保存** | サーバーのみ | OPFS + サーバー |
+
+この設計により、管理者（Desktop）は常に最新のサーバーデータを参照でき、点検者（Mobile）は不安定なネットワーク環境でも作業を継続できます。
 
 ### 同期フロー
 
@@ -487,7 +508,7 @@ export class OPFSStorage {
 #### Repository実装の更新
 
 ```typescript
-export class InspectionRepositoryImpl implements IInspectionRepository {
+export class MobileInspectionRepositoryImpl implements IMobileInspectionRepository {
   constructor(
     private db: LocalBridgeDatabase,
     private opfs: OPFSStorage

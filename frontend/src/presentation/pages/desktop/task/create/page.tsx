@@ -1,30 +1,8 @@
-import { useState, useEffect } from 'react'
-import { inspectionRepository } from '@/infrastructure/repositories/InspectionRepositoryImpl'
+import { useDesktopTaskCreate } from '@/presentation/hooks/desktop'
 import { TaskCreateView } from '@/presentation/features/admin/TaskCreateView'
-import type { Area, Equipment } from '@/domain/types/inspection'
 
 export const Page = () => {
-  const [areas, setAreas] = useState<Area[]>([])
-  const [equipments, setEquipments] = useState<Equipment[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-
-  useEffect(() => {
-    const loadData = async () => {
-      // エリア一覧を取得
-      const areasData = await inspectionRepository.getAreas()
-      setAreas(areasData)
-
-      // 全ターゲットを取得（View側でフィルタリングするため）
-      // 本来はエリア選択時にAPIを叩くのが良いが、今回は全件取得で対応
-      const allEquipments: Equipment[] = []
-      for (const area of areasData) {
-        const eqs = await inspectionRepository.getEquipments(area.id)
-        allEquipments.push(...eqs)
-      }
-      setEquipments(allEquipments)
-    }
-    loadData()
-  }, [])
+  const { areas, equipments, isLoading, createTask } = useDesktopTaskCreate()
 
   const handleCreateTask = async (data: {
     title: string
@@ -32,20 +10,13 @@ export const Page = () => {
     areaId: string
     equipmentId: string
   }) => {
-    setIsLoading(true)
     try {
-      await inspectionRepository.createTask({
-        ...data,
-        status: 'todo',
-      })
-      alert('Task created successfully!')
+      await createTask(data)
+      alert('タスクを作成しました')
       // TODO: タスク一覧画面へ遷移
-      // navigate(Routing.Admin.Task.List.path)
     } catch (error) {
       console.error('Failed to create task:', error)
-      alert('Failed to create task.')
-    } finally {
-      setIsLoading(false)
+      alert('タスクの作成に失敗しました')
     }
   }
 

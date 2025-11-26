@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -10,10 +10,9 @@ import {
   XCircle,
   MinusCircle,
 } from 'lucide-react'
-import { inspectionRepository } from '@/infrastructure/repositories/InspectionRepositoryImpl'
+import { useDesktopInspectionDetail } from '@/presentation/hooks/desktop'
 import { Routing } from '@/presentation/routes/routing'
 import { CreateReInspectionButton } from '@/presentation/components/CreateReInspectionButton'
-import type { Inspection, InspectionItem, InspectionResult } from '@/domain/types/inspection'
 import { Button } from '@/presentation/components/ui'
 
 type FilterType = 'all' | 'ng' | 'todo' | 'done'
@@ -21,46 +20,14 @@ type FilterType = 'all' | 'ng' | 'todo' | 'done'
 export const Page = () => {
   const { inspectionId } = useParams<{ inspectionId: string }>()
   const navigate = useNavigate()
-
-  const [inspection, setInspection] = useState<Inspection | null>(null)
-  const [items, setItems] = useState<InspectionItem[]>([])
-  const [results, setResults] = useState<Map<string, InspectionResult>>(new Map())
-  const [isLoading, setIsLoading] = useState(true)
   const [filter, setFilter] = useState<FilterType>('all')
 
-  useEffect(() => {
-    const loadData = async () => {
-      if (!inspectionId) return
+  const { inspection, items, results, isLoading, error } = useDesktopInspectionDetail(inspectionId)
 
-      try {
-        const [inspectionData, itemsData] = await Promise.all([
-          inspectionRepository.getInspectionById(inspectionId),
-          inspectionRepository.getItemsByInspectionId(inspectionId),
-        ])
-
-        if (!inspectionData) {
-          // 検査が見つからない場合
-          navigate(Routing.Desktop.Inspection.List.path) // 一覧へ戻る
-          return
-        }
-
-        setInspection(inspectionData)
-        setItems(itemsData)
-
-        // 結果を取得
-        const itemIds = itemsData.map((i) => i.id)
-        if (itemIds.length > 0) {
-          const resultsMap = await inspectionRepository.getLatestResultsByItemIds(itemIds)
-          setResults(resultsMap)
-        }
-      } catch (error) {
-        console.error('Failed to load inspection details:', error)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-    loadData()
-  }, [inspectionId, navigate])
+  if (error) {
+    navigate(Routing.Desktop.Inspection.List.path)
+    return null
+  }
 
   if (isLoading || !inspection) {
     return <div className="p-8 text-center">読み込み中...</div>

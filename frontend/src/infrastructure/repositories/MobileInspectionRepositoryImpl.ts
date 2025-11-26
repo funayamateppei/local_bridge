@@ -1,5 +1,5 @@
 import { db } from '@/infrastructure/db'
-import type { IInspectionRepository } from '@/domain/repositories/InspectionRepository'
+import type { IMobileInspectionRepository } from '@/domain/repositories/MobileInspectionRepository'
 import {
   Area,
   Equipment,
@@ -14,7 +14,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { opfsStorage } from '@/infrastructure/storage/opfs'
 import { syncQueueService } from '@/infrastructure/services/SyncQueueService'
 
-export class InspectionRepositoryImpl implements IInspectionRepository {
+export class MobileInspectionRepositoryImpl implements IMobileInspectionRepository {
   // Master Data
   async getAreas(): Promise<Area[]> {
     const areas = await db.areas.toArray()
@@ -344,4 +344,4 @@ export class InspectionRepositoryImpl implements IInspectionRepository {
   }
 }
 
-export const inspectionRepository = new InspectionRepositoryImpl()
+export const mobileInspectionRepository = new MobileInspectionRepositoryImpl()

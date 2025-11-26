@@ -9,29 +9,37 @@ import type {
   InspectionComment,
 } from '@/domain/entities'
 
-export interface IInspectionRepository {
+/**
+ * Desktop用検査リポジトリインターフェース
+ *
+ * DesktopアプリはオンラインのみでIndexedDBを使用しないため、
+ * API経由でデータを取得・更新します。
+ */
+export interface IDesktopInspectionRepository {
   // Master Data
   getAreas(): Promise<Area[]>
   getEquipments(areaId: string): Promise<Equipment[]>
+  getAllEquipments(): Promise<Equipment[]>
 
   // Inspection
-  createInspection(inspection: Omit<Inspection, 'id' | 'createdAt' | 'updatedAt'>): Promise<string>
   getAllInspections(): Promise<Inspection[]>
   getInspectionById(id: string): Promise<Inspection | undefined>
 
-  // InspectionItem
-  createInspectionItem(item: Omit<InspectionItem, 'id' | 'createdAt' | 'updatedAt'>): Promise<void>
-  getItemsByInspectionId(inspectionId: string): Promise<InspectionItem[]>
+  // InspectionItem (Task)
   getAllItems(): Promise<InspectionItem[]>
+  getItemsByInspectionId(inspectionId: string): Promise<InspectionItem[]>
   getItemById(id: string): Promise<InspectionItem | undefined>
+  createTask(task: {
+    title: string
+    description?: string
+    areaId: string
+    equipmentId: string
+    status: InspectionStatus
+    inspectionId?: string
+  }): Promise<string>
+  updateItemStatus(itemId: string, status: InspectionStatus): Promise<void>
 
-  // Result & Evidence
-  submitResult(result: Omit<InspectionResult, 'id' | 'createdAt'>): Promise<void>
-  saveEvidence(
-    evidence: Omit<Evidence, 'id' | 'createdAt' | 'filePath'>,
-    file: Blob
-  ): Promise<string> // Returns evidence ID
-  getEvidencesByResultId(resultId: string): Promise<Evidence[]>
+  // Result
   getResultsByItemId(itemId: string): Promise<InspectionResult[]>
   getLatestResultsByItemIds(itemIds: string[]): Promise<Map<string, InspectionResult>>
 
@@ -39,7 +47,6 @@ export interface IInspectionRepository {
   addComment(comment: Omit<InspectionComment, 'id' | 'createdAt'>): Promise<void>
   getCommentsByItemId(itemId: string): Promise<InspectionComment[]>
 
-  // Status Update
-  updateItemStatus(itemId: string, status: InspectionStatus): Promise<void>
-  updateInspectionStatus(inspectionId: string, status: InspectionStatus): Promise<void>
+  // Evidence
+  getEvidencesByResultId(resultId: string): Promise<Evidence[]>
 }

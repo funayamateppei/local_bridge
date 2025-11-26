@@ -62,17 +62,31 @@ export class InspectionTask {
 **例:**
 
 ```typescript
-// Domain層
-export interface IInspectionRepository {
+// Domain層 (Mobile用: オフライン対応)
+export interface IMobileInspectionRepository {
   getAreas(): Promise<Area[]>
   createTask(task: Omit<InspectionTask, "id" | "createdAt" | "updatedAt">): Promise<void>
 }
 
-// Infrastructure層
-export class InspectionRepositoryImpl implements IInspectionRepository {
+// Domain層 (Desktop用: オンライン専用)
+export interface IDesktopInspectionRepository {
+  getAreas(): Promise<Area[]>
+  createTask(task: {...}): Promise<string>
+}
+
+// Infrastructure層 (Mobile: IndexedDB使用)
+export class MobileInspectionRepositoryImpl implements IMobileInspectionRepository {
   async getAreas(): Promise<Area[]> {
     const areas = await db.areas.toArray()
     return areas.map((a) => new Area(a.id, a.name))
+  }
+}
+
+// Infrastructure層 (Desktop: API直接呼び出し)
+export class DesktopInspectionRepositoryImpl implements IDesktopInspectionRepository {
+  async getAreas(): Promise<Area[]> {
+    const response = await fetch('/api/areas')
+    return response.json()
   }
 }
 ```
@@ -180,8 +194,8 @@ export class OPFSStorage {
   async deleteFile(filePath: string): Promise<void>
 }
 
-// Repository実装
-export class InspectionRepositoryImpl {
+// Repository実装 (Mobile: オフライン対応)
+export class MobileInspectionRepositoryImpl {
   constructor(
     private db: LocalBridgeDatabase,
     private opfs: OPFSStorage

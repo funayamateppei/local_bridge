@@ -73,16 +73,20 @@ Local Bridge は、ネットワーク接続が不安定または完全に存在�
 
 ## 🏗 アーキテクチャ概要
 
-このアプリケーションは **Local-First** アーキテクチャを採用しています。
-UI は常にローカルのデータソース(IndexedDB / OPFS)のみを参照します。サーバーはあくまでデータのバックアップおよび共有先として機能します。
+このアプリケーションは **2つの異なるアーキテクチャ** を採用しています。
+
+### Mobile (点検者向け) - Local-First アーキテクチャ
+
+オフライン環境での作業を前提とした **Local-First** 設計です。
+UI は常にローカルのデータソース(IndexedDB / OPFS)のみを参照し、サーバーはデータのバックアップおよび共有先として機能します。
 
 ```mermaid
 graph LR
-    subgraph Client [Client Side Browser]
+    subgraph Client [Mobile Client]
         UI[UI / View]
         subgraph LocalData [Local Storage]
             IDB[("IndexedDB<br/>Metadata & Status")]
-            OPFS["OPFS<br/>Binary Files (Images/Videos)"]
+            OPFS["OPFS<br/>Binary Files"]
         end
         Sync["Sync Service<br/>(User Triggered)"]
     end
@@ -93,7 +97,6 @@ graph LR
         Storage[Object Storage]
     end
 
-    %% Data Flow
     UI <--> |Read/Write| IDB
     UI <--> |Read/Write| OPFS
     IDB <--> |Metadata| Sync
@@ -102,6 +105,40 @@ graph LR
     API --> DB
     API --> Storage
 ```
+
+### Desktop (管理者向け) - Online-Only アーキテクチャ
+
+デスクトップ環境では常時オンラインを前提とした **API直接通信** 設計です。
+UI は REST API を直接呼び出し、IndexedDB やローカルストレージは使用しません。
+
+```mermaid
+graph LR
+    subgraph Client [Desktop Client]
+        UI[UI / View]
+        Repository["Desktop Repository"]
+    end
+
+    subgraph Server [Server Side]
+        API[Backend API]
+        DB[("Remote DB")]
+        Storage[Object Storage]
+    end
+
+    UI --> Repository
+    Repository --> |REST API| API
+    API --> DB
+    API --> Storage
+```
+
+### Mobile vs Desktop 比較
+
+| 観点 | Mobile (点検者) | Desktop (管理者) |
+|------|----------------|------------------|
+| ネットワーク前提 | オフラインファースト | 常時オンライン |
+| データソース | IndexedDB + OPFS | REST API 直接 |
+| 同期方式 | 手動同期 (SyncQueue) | リアルタイム通信 |
+| Repository | `IMobileInspectionRepository` | `IDesktopInspectionRepository` |
+| 主なユースケース | 現場での点検作業 | タスク管理・レビュー |
 
 ### 主要技術スタック
 

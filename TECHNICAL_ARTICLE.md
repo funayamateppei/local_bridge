@@ -92,8 +92,8 @@ export class Evidence {
   ) {}
 }
 
-// src/domain/repositories/IInspectionRepository.ts
-export interface IInspectionRepository {
+// src/domain/repositories/MobileInspectionRepository.ts
+export interface IMobileInspectionRepository {
   saveEvidence(evidence: Evidence, file: Blob): Promise<void>
   getEvidencesByResultId(resultId: string): Promise<Evidence[]>
 }
@@ -105,8 +105,8 @@ export interface IInspectionRepository {
 Local-First の肝は、**Repository の実装がまずローカル DB を読み書きする**点にあります。
 
 ```typescript
-// src/infrastructure/repositories/InspectionRepositoryImpl.ts
-export class InspectionRepositoryImpl implements IInspectionRepository {
+// src/infrastructure/repositories/MobileInspectionRepositoryImpl.ts
+export class MobileInspectionRepositoryImpl implements IMobileInspectionRepository {
   constructor(
     private db: LocalBridgeDatabase, // Dexieインスタンス
     private opfs: OPFSStorage // OPFSラッパー
@@ -306,6 +306,77 @@ Local Bridge では、以下の戦略を採用しています：
 
 - **Downstream (Server → Client)**:
   - サーバー側で更新されたデータ（他のユーザーによる実施結果など）を取得し、ローカル DB にマージします。
+
+### 同期キューの永続化と楽観的更新
+
+Local-First で重要なのは **「データの損失を防ぐこと」** です。
+アプリが予期せずクラッシュしたり、ブラウザが閉じられた場合でも、未同期データを失わないように設計しました。
+
+#### 楽観的更新パターン
+
+ユーザーがデータを保存する際、以下の流れで処理します：
+
+```typescript
+async saveResult(result: InspectionResult): Promise<void> {
+  const id = uuidv4()
+  const newResult = { id, ...result, createdAt: Date.now() }
+
+  // 1. 即座にローカルDBに保存（楽観的更新）
+  await db.inspectionResults.add(newResult)
+
+  // 2. 同期キューに追加（後で同期）
+  await syncQueueService.enqueue('result', id, newResult)
+}
+```
+
+**ポイント**:
+- UI更新は即座（<10ms）で完了
+- サーバー同期は非同期で実行されるため、ユーザーを待たせない
+
+#### 同期キューのスキーマ
+
+IndexedDB に `syncQueue` テーブルを追加し、未同期データを永続化します：
+
+```typescript
+interface SyncQueueItem {
+  id: string                // キューアイテムのID
+  type: 'inspection' | 'inspectionItem' | 'result' | 'comment' | 'evidence'
+  entityId: string          // 対象エンティティのID
+  payload: unknown          // 同期するデータの全体
+  status: 'pending' | 'syncing' | 'failed'
+  retryCount: number        // リトライ回数（最大3回）
+  createdAt: number
+  errorMessage?: string
+}
+```
+
+#### 同期の実行順序
+
+依存関係を考慮し、親→子の順序で同期を実行します：
+
+```
+inspection → inspectionItem → result → comment → evidence
+```
+
+これにより、外部キー制約違反を防ぎます。
+
+#### UIでの未同期件数表示
+
+ユーザーが未同期データの存在を認識できるよう、同期ボタンに件数を表示します：
+
+```tsx
+const { pendingCount, hasPendingChanges, sync } = useSync()
+
+return (
+  <Button onClick={sync}>
+    {hasPendingChanges ? (
+      <>未同期: {pendingCount}件</>
+    ) : (
+      <>同期済</>
+    )}
+  </Button>
+)
+```
 
 ### UI は「常に」IndexedDB を見る
 

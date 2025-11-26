@@ -579,7 +579,7 @@ export const SyncButton: React.FC = () => {
                                       ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                          Repository Layer                                │
-│                      (InspectionRepositoryImpl)                          │
+│                   (MobileInspectionRepositoryImpl)                       │
 │                                                                          │
 │   ┌─────────────────────┐     ┌─────────────────────┐                   │
 │   │  1. ローカルDBに保存  │ ──► │  2. 同期キューに追加  │                   │
@@ -781,7 +781,7 @@ export class SyncQueueService {
 ### Repository での使用例
 
 ```typescript
-// InspectionRepositoryImpl.ts
+// MobileInspectionRepositoryImpl.ts
 
 async saveResult(result: InspectionResult): Promise<void> {
   const newResult = {
