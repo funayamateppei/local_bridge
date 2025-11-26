@@ -1,24 +1,77 @@
-# local_bridge
+# Local Bridge - オフラインファースト点検管理システム
 
-local_bridge は、ネットワーク接続が不安定、または完全に存在しない環境（例：山間部、災害時、地下など）での使用を想定した **Local-First (Offline-First)** な Web アプリケーションのデモ実装です。
+Local Bridge は、ネットワーク接続が不安定または完全に存在しない環境(例: 工場、倉庫、地下施設、山間部など)での**設備点検業務**を想定した、**オフラインファースト**な Web アプリケーションです。
 
-ユーザーが作成したデータは全てローカル環境（ブラウザ）に即座に保存され、ネットワーク接続が回復したタイミングでバックエンドと同期されます。
+## 🎯 なぜこのシステムが必要か
 
-## 🏔 Concept
+### 現場の課題
 
-- **No Network, No Problem**
-  オフライン状態でも閲覧・作成・編集の全ての機能が利用可能です。
+従来の点検管理システムでは、以下のような問題がありました:
 
-- **Heavy Media Support**
-  テキストだけでなく、画像や動画などの大容量ファイルもローカルで快適に管理します。
+1. **ネットワーク依存による作業中断**
 
-- **Seamless Sync**
-  ユーザーは「保存ボタン」や「アップロード待ち」を意識する必要はありません。接続時に自動的に同期が行われます。
+   - 地下や建物内部など、電波が届かない場所での点検作業が多い
+   - 接続が不安定な環境で、データ送信の失敗やタイムアウトが頻発
+   - 「保存できない」「送信できない」というストレスで作業効率が低下
 
-## 🏗 Architecture
+2. **大容量メディアファイルの扱いづらさ**
+
+   - 点検では写真や動画による記録が必須
+   - 従来システムでは「後でアップロード」が必要で、手間がかかる
+   - アップロード待ち時間が長く、現場での作業が滞る
+
+3. **データ消失のリスク**
+   - ネットワークエラーで入力データが失われる
+   - 「保存ボタン」を押し忘れてデータが消える
+
+### Local Bridge の解決策
+
+これらの課題を解決するため、**ユーザー体験(UX)を最優先**に設計しました:
+
+#### 1. **完全オフライン動作 - ネットワークを気にせず作業できる**
+
+- すべての操作がローカルで完結
+- 電波がなくても、点検結果の入力・写真撮影・動画記録が可能
+- データは即座にブラウザに保存され、絶対に失われない
+
+**UX への影響**: 点検者は「接続状態」を気にする必要がなく、作業に集中できる
+
+#### 2. **手動同期 - ユーザーがコントロールできる**
+
+自動同期ではなく、**ユーザーが明示的に同期タイミングを選択**する設計です。
+
+**なぜ手動か?**
+
+- 不安定な接続での自動同期は、予期しない動作(データの重複、同期失敗)を引き起こす
+- ユーザーが「今、同期する」と決められることで、安心感と透明性を提供
+- バッテリー消費を抑えられる(バックグラウンド同期が不要)
+
+**UX への影響**:
+
+- 「いつ同期されるか分からない」不安がない
+- 同期の成功/失敗が明確に分かる
+- Wi-Fi 環境に移動してから同期、など柔軟な運用が可能
+
+#### 3. **OPFS 活用 - 大容量ファイルも快適に**
+
+画像・動画は**Origin Private File System (OPFS)**に保存します。
+
+**なぜ OPFS か?**
+
+- IndexedDB は大きなバイナリデータに不向き(パフォーマンス低下、容量制限)
+- Base64 エンコードは不要なオーバーヘッド
+- OPFS は高速なファイル I/O を提供し、メインスレッドをブロックしない
+
+**UX への影響**:
+
+- 動画撮影後も即座に保存完了
+- サムネイル表示やプレビューが高速
+- 大量の写真を撮影してもアプリが重くならない
+
+## 🏗 アーキテクチャ概要
 
 このアプリケーションは **Local-First** アーキテクチャを採用しています。
-UI は常にローカルのデータソース（IndexedDB / OPFS）のみを参照して描画を行います。サーバー（Backend）はあくまでデータのバックアップおよび共有先として機能します。
+UI は常にローカルのデータソース(IndexedDB / OPFS)のみを参照します。サーバーはあくまでデータのバックアップおよび共有先として機能します。
 
 ```mermaid
 graph LR
@@ -28,7 +81,7 @@ graph LR
             IDB[("IndexedDB<br/>Metadata & Status")]
             OPFS["OPFS<br/>Binary Files (Images/Videos)"]
         end
-        Sync["Sync Engine<br/>(Service Worker / Worker)"]
+        Sync["Sync Service<br/>(User Triggered)"]
     end
 
     subgraph Server [Server Side]
@@ -38,44 +91,172 @@ graph LR
     end
 
     %% Data Flow
-    UI <-->|Read/Write| IDB
-    UI <-->|Read/Write| OPFS
-    IDB <-->|Change Detection| Sync
-    OPFS <-->|File Access| Sync
-    Sync -.->|Network Available| API
+    UI <--> |Read/Write| IDB
+    UI <--> |Read/Write| OPFS
+    IDB <--> |Metadata| Sync
+    OPFS <--> |File Access| Sync
+    Sync -.-> |Manual Sync| API
     API --> DB
     API --> Storage
 ```
 
-## Key Technologies
+### 主要技術スタック
 
-- **IndexedDB (via Dexie.js)**
-  アプリケーションの「正（Source of Truth）」となるデータストア。JSON データ、メタデータ、同期ステータス（pending, synced）を管理します。ID にはサーバー採番ではなく、クライアント生成の UUID (v4) を使用し、衝突を回避します。
+#### **IndexedDB (via Dexie.js)**
 
-- **OPFS (Origin Private File System)**
-  画像や動画などのバイナリデータを管理するために使用します。IndexedDB の容量制限やパフォーマンス低下を回避するため、ファイルシステムとして分離しています。高い I/O パフォーマンスを実現し、メインスレッドをブロックしません。
+- アプリケーションの「信頼できる唯一の情報源(Source of Truth)」
+- 点検タスク、結果、コメント、エビデンスのメタデータを管理
+- ID はサーバー採番ではなく、クライアント生成の UUID (v4)を使用し、衝突を回避
 
-## 💾 Data Design
+#### **OPFS (Origin Private File System)**
 
-### IndexedDB Schema (logs Store)
+- 画像・動画などのバイナリデータ専用ストレージ
+- IndexedDB の容量制限やパフォーマンス低下を回避
+- 高速な I/O パフォーマンスを実現し、メインスレッドをブロックしない
 
-| Field Name    | Type          | Description                                                                                                    |
-| ------------- | ------------- | -------------------------------------------------------------------------------------------------------------- |
-| `id`          | string (UUID) | PK. クライアントサイドで生成される一意な ID。                                                                  |
-| `content`     | string        | ユーザーが入力したテキストデータ。                                                                             |
-| `media_ids`   | string[]      | OPFS に保存されたファイル名のリスト（UUID）。                                                                  |
-| `created_at`  | number        | 作成日時のタイムスタンプ。                                                                                     |
-| `sync_status` | string        | 同期状態を管理。<br>- `pending`: 未同期（ローカルのみ）<br>- `synced`: サーバー同期済み<br>- `error`: 同期失敗 |
+#### **Clean Architecture**
 
-### File Storage Strategy
+- ドメイン駆動設計(DDD)に基づいた保守性の高い構造
+- ビジネスロジックとインフラを分離
+- テスタビリティと拡張性を確保
 
-- **Naming Convention**: `media_ids` と紐付く UUID を使用（例: `550e8400-e29b....mp4`）。
-- **Storage**: OPFS のルート、または `/assets` ディレクトリ配下にフラットに保存。
+## 💾 データ設計
 
-## 🔄 Synchronization Logic
+### エンティティ
 
-1. **Detection**: ブラウザの `online` イベント、または Service Worker による定期チェックでネットワーク回復を検知。
-2. **Extraction**: IndexedDB から `sync_status: 'pending'` のレコードを抽出。
-3. **Upload Media**: レコードに `media_ids` が含まれる場合、OPFS からファイルを読み出し、バックエンドの Storage へアップロード。
-4. **Sync Metadata**: メディアのアップロード完了後、テキストデータとメタデータを API へ POST。
-5. **Completion**: サーバーからの成功レスポンスを確認後、ローカルの `sync_status` を `synced` に更新。
+| エンティティ      | 説明                               | 保存先    |
+| ----------------- | ---------------------------------- | --------- |
+| Area              | 点検エリア(例: Kitchen, Hall)      | IndexedDB |
+| Equipment         | 設備(例: Dishwasher, Oven)         | IndexedDB |
+| InspectionTask    | 点検タスク                         | IndexedDB |
+| InspectionResult  | 点検結果(OK/NG/N/A)                | IndexedDB |
+| InspectionComment | コメント                           | IndexedDB |
+| Evidence          | エビデンス(写真・動画)のメタデータ | IndexedDB |
+| (実ファイル)      | 画像・動画の実体                   | OPFS      |
+
+### Evidence (エビデンス) の設計
+
+```typescript
+class Evidence {
+  id: string // UUID
+  resultId: string // 紐づく点検結果のID
+  type: "image" | "video"
+  filePath: string // OPFSでのファイルパス
+  mimeType: string // 'image/jpeg', 'video/mp4'等
+  createdAt: number // タイムスタンプ
+}
+```
+
+**ポイント**:
+
+- メタデータ(id, type, mimeType 等)は IndexedDB に保存
+- 実ファイルは OPFS に保存し、`filePath`で参照
+- Base64 エンコードは使用しない(パフォーマンス重視)
+
+## 🔄 同期ロジック
+
+### 同期フロー
+
+```mermaid
+sequenceDiagram
+    participant User as 点検者
+    participant UI
+    participant LocalDB as IndexedDB
+    participant OPFS
+    participant Sync as Sync Service
+    participant API as Backend API
+
+    User->>UI: オンラインモードに切り替え
+    User->>UI: 同期ボタンをクリック
+
+    UI->>Sync: 同期開始
+
+    Sync->>LocalDB: 未同期の結果を取得
+    LocalDB-->>Sync: InspectionResult[]
+
+    loop 各結果について
+        Sync->>LocalDB: Evidenceメタデータ取得
+        LocalDB-->>Sync: Evidence[]
+
+        loop 各Evidenceについて
+            Sync->>OPFS: ファイル読み込み(filePath)
+            OPFS-->>Sync: File/Blob
+            Sync->>API: ファイルアップロード
+            API-->>Sync: アップロード成功
+        end
+
+        Sync->>API: 点検結果送信
+        API-->>Sync: 成功レスポンス
+        Sync->>LocalDB: sync_statusを'synced'に更新
+    end
+
+    Sync->>API: マスターデータ取得
+    API-->>Sync: Area, Equipment, Task
+    Sync->>LocalDB: ローカルDB更新
+
+    Sync-->>UI: 同期完了
+    UI-->>User: 完了通知表示
+```
+
+### データの同期方向
+
+| データ種類          | 同期方向        | 説明                         |
+| ------------------- | --------------- | ---------------------------- |
+| Area, Equipment     | Server → Client | マスターデータ。管理者が設定 |
+| InspectionTask      | Server → Client | 管理者が作成したタスク       |
+| InspectionResult    | Client → Server | 点検者が登録した結果         |
+| Evidence (ファイル) | Client → Server | 写真・動画をアップロード     |
+| InspectionComment   | Bi-directional  | コメントは双方向同期         |
+
+### 同期のタイミング
+
+1. **ユーザーが「オンラインモード」に切り替え**
+2. **ユーザーが「同期」ボタンをクリック**
+
+**自動同期は行いません**。これにより:
+
+- ユーザーが同期タイミングをコントロールできる
+- 不安定な接続での予期しない動作を防ぐ
+- バッテリー消費を抑える
+
+## 📱 ユーザーロール
+
+### デスクトップ(管理者)
+
+- 点検タスクの作成
+- タスクの進捗確認
+- 点検結果のレビュー
+- コメント追加
+
+### モバイル(点検者)
+
+- 割り当てられたタスクの確認
+- 点検実施(OK/NG/N/A 判定)
+- 写真・動画の撮影・添付
+- コメント追加
+
+## 🚀 Getting Started
+
+詳細は各ディレクトリの README を参照してください:
+
+- [Frontend README](./frontend/README.md)
+- [Backend README](./backend/README.md) (TODO)
+
+## 📚 ドキュメント
+
+- [Frontend Architecture](./frontend/ARCHITECTURE.md) - フロントエンドの詳細設計
+- [Development Rules](./frontend/rules.md) - 開発ルールとガイドライン
+
+## 🎨 UX 設計の原則
+
+このプロジェクトでは、以下の UX 原則を重視しています:
+
+1. **ユーザーを待たせない** - すべての操作が即座に完了
+2. **データを失わせない** - 自動保存、オフライン対応
+3. **透明性を保つ** - 同期状態が常に明確
+4. **ユーザーにコントロールを与える** - 手動同期、明示的な操作
+5. **シンプルに保つ** - 複雑な設定や操作を排除
+
+## 📄 License
+
+(TODO)
