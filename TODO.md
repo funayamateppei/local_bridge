@@ -65,24 +65,23 @@
 
 ### エラーハンドリングの強化
 
-- [ ] **リトライ機構の実装**: 現在、同期失敗時のリトライがない
-  - エクスポネンシャルバックオフ（1s → 2s → 4s → 8s → 最大10s）
-  - 最大リトライ回数: 3回
-  - 実装場所: `ApiClient.ts`
+- [ ] **リトライ機構の実装**: エクスポネンシャルバックオフ（現在は固定リトライ）
+  - 現状: 最大3回のリトライ（固定間隔）
+  - 改善案: エクスポネンシャルバックオフ（1s → 2s → 4s → 8s → 最大10s）
+  - 実装場所: `SyncService.ts`
 
-- [ ] **同期キューの永続化**: 現在、同期状態はメモリのみ
-  - IndexedDB に `syncQueue` テーブルを追加
+- [x] **同期キューの永続化**: ✅ 実装完了
+  - IndexedDB に `syncQueue` テーブルを追加済み
   - アプリ再起動後も未同期データを保持
-  - スキーマ例:
-    ```typescript
-    interface SyncQueueItem {
-      id: string;
-      type: 'result' | 'comment' | 'evidence';
-      payload: any;
-      retryCount: number;
-      createdAt: number;
-    }
-    ```
+  - 実装ファイル:
+    - `infrastructure/db.ts` - スキーマ定義
+    - `infrastructure/services/SyncQueueService.ts` - キュー管理
+    - `infrastructure/services/SyncService.ts` - キューベース同期
+  - 詳細: `SYNC_LOGIC.md` の「同期キューによる永続化」セクション参照
+
+- [x] **楽観的更新の徹底**: ✅ 実装完了
+  - 全Repositoryメソッドで即座にローカルDB保存 → 同期キュー追加のパターンを適用
+  - UI更新は即座（<10ms）、サーバー同期は非同期
 
 - [ ] **部分同期失敗の詳細レポート**: 現在、失敗時の情報が不足
   - どのデータタイプが失敗したか表示

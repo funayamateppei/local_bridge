@@ -562,6 +562,265 @@ export const SyncButton: React.FC = () => {
 }
 ```
 
+## 同期キューによる永続化
+
+### 概要
+
+同期キューは、ローカルでの変更を確実にサーバーへ同期するための仕組みです。アプリ再起動後も未同期データを保持し、ネットワーク復旧時に確実に同期を完了させます。
+
+### アーキテクチャ
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                              User Action                                 │
+│                     (検査結果を保存、コメント追加など)                      │
+└─────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          Repository Layer                                │
+│                      (InspectionRepositoryImpl)                          │
+│                                                                          │
+│   ┌─────────────────────┐     ┌─────────────────────┐                   │
+│   │  1. ローカルDBに保存  │ ──► │  2. 同期キューに追加  │                   │
+│   │   (楽観的更新)        │     │   (永続化)           │                   │
+│   └─────────────────────┘     └─────────────────────┘                   │
+└─────────────────────────────────────────────────────────────────────────┘
+                                      │
+                    ┌─────────────────┴─────────────────┐
+                    ▼                                   ▼
+          ┌─────────────────┐                ┌─────────────────┐
+          │   IndexedDB      │                │   IndexedDB      │
+          │   (データ本体)    │                │   (syncQueue)    │
+          │                  │                │                  │
+          │  - inspections   │                │  id: string      │
+          │  - results       │                │  type: string    │
+          │  - comments      │                │  entityId: string│
+          │  - evidences     │                │  payload: object │
+          └─────────────────┘                │  status: pending │
+                                             │  retryCount: 0   │
+                                             └─────────────────┘
+```
+
+### データフロー
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                        データフロー比較                                   │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  【従来の同期（同期待ち）】                                                │
+│                                                                          │
+│    User Input ──► API Request ──► Wait... ──► Response ──► Update UI     │
+│                        │                          │                      │
+│                        └────── ネットワーク遅延 ───┘                      │
+│                                (100ms〜数秒)                              │
+│                                                                          │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  【Local-First（楽観的更新）】                                            │
+│                                                                          │
+│    User Input ──┬──► IndexedDB ──► Update UI (即座に反映)                │
+│                 │         │                                              │
+│                 │         ▼                                              │
+│                 └──► SyncQueue ──► 後でサーバーへ送信                     │
+│                                                                          │
+│    ※ UI更新は即座（<10ms）、サーバー同期は非同期で実行                     │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+### SyncQueueItem スキーマ
+
+```typescript
+export type SyncQueueItemType =
+  | 'inspection'
+  | 'inspectionItem'
+  | 'result'
+  | 'comment'
+  | 'evidence'
+
+export type SyncQueueStatus = 'pending' | 'syncing' | 'failed'
+
+export interface SyncQueueItem {
+  id: string                // キューアイテムのID（UUID）
+  type: SyncQueueItemType   // エンティティの種類
+  entityId: string          // 対象エンティティのID
+  payload: unknown          // 同期するデータの全体
+  status: SyncQueueStatus   // 同期状態
+  retryCount: number        // リトライ回数
+  createdAt: number         // キュー追加日時
+  lastAttemptAt?: number    // 最後の同期試行日時
+  errorMessage?: string     // エラーメッセージ
+}
+```
+
+### 状態遷移
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                       同期キューの状態遷移                                │
+└──────────────────────────────────────────────────────────────────────────┘
+
+                              ┌─────────┐
+                              │ pending │ ◄── 新規作成時
+                              └────┬────┘
+                                   │
+                                   │ sync() 実行
+                                   ▼
+                              ┌─────────┐
+                              │ syncing │ ◄── 同期処理中
+                              └────┬────┘
+                                   │
+                    ┌──────────────┴──────────────┐
+                    │                             │
+               成功 ▼                        失敗 ▼
+          ┌─────────────┐                ┌─────────┐
+          │   削除      │                │ failed  │
+          │ (キューから) │                └────┬────┘
+          └─────────────┘                     │
+                                              │ retryCount < MAX_RETRY
+                                              │
+                                    ┌─────────┴─────────┐
+                                    │                   │
+                               Yes  ▼              No   ▼
+                            ┌─────────┐         ┌───────────┐
+                            │ pending │         │ 手動対応   │
+                            │ (再試行) │         │ が必要    │
+                            └─────────┘         └───────────┘
+
+
+MAX_RETRY_COUNT = 3
+```
+
+### 同期順序
+
+依存関係を考慮し、以下の順序で同期を実行します:
+
+```
+1. inspection      (検査)
+       │
+       ▼
+2. inspectionItem  (検査項目) ── inspectionId で紐付け
+       │
+       ▼
+3. result          (検査結果) ── inspectionItemId で紐付け
+       │
+       ▼
+4. comment         (コメント) ── inspectionItemId で紐付け
+       │
+       ▼
+5. evidence        (証跡)     ── resultId で紐付け
+```
+
+### SyncQueueService 実装
+
+```typescript
+export class SyncQueueService {
+  private readonly MAX_RETRY_COUNT = 3
+
+  /**
+   * 同期キューにアイテムを追加
+   */
+  async enqueue(
+    type: SyncQueueItemType,
+    entityId: string,
+    payload: unknown
+  ): Promise<string> {
+    const id = uuidv4()
+    await db.syncQueue.add({
+      id,
+      type,
+      entityId,
+      payload,
+      status: 'pending',
+      retryCount: 0,
+      createdAt: Date.now(),
+    })
+    return id
+  }
+
+  /**
+   * 未同期アイテムを取得
+   */
+  async getPendingItems(): Promise<SyncQueueItem[]> {
+    return db.syncQueue
+      .where('status')
+      .anyOf(['pending', 'failed'])
+      .filter(item => item.retryCount < this.MAX_RETRY_COUNT)
+      .toArray()
+  }
+
+  /**
+   * ステータス更新
+   */
+  async updateStatus(
+    id: string,
+    status: SyncQueueStatus,
+    errorMessage?: string
+  ): Promise<void> {
+    await db.syncQueue.update(id, {
+      status,
+      lastAttemptAt: Date.now(),
+      ...(status === 'failed' && {
+        retryCount: (await db.syncQueue.get(id))!.retryCount + 1,
+        errorMessage
+      }),
+    })
+  }
+
+  /**
+   * 同期完了後にキューから削除
+   */
+  async markAsSynced(id: string): Promise<void> {
+    await db.syncQueue.delete(id)
+  }
+}
+```
+
+### Repository での使用例
+
+```typescript
+// InspectionRepositoryImpl.ts
+
+async saveResult(result: InspectionResult): Promise<void> {
+  const newResult = {
+    id: uuidv4(),
+    ...result,
+    createdAt: Date.now(),
+  }
+
+  // 1. 即座にローカルDBに保存（楽観的更新）
+  await db.inspectionResults.add(newResult)
+
+  // 2. 同期キューに追加（後で同期）
+  await syncQueueService.enqueue('result', newResult.id, newResult)
+}
+```
+
+### UI での未同期件数表示
+
+```tsx
+// SyncButton.tsx
+
+export const SyncButton = () => {
+  const { pendingCount, hasPendingChanges, sync, isSyncing } = useSync()
+
+  return (
+    <Button onClick={sync} disabled={isSyncing}>
+      {isSyncing ? (
+        <RefreshCw className="animate-spin" />
+      ) : hasPendingChanges ? (
+        <CloudOff />
+      ) : (
+        <CheckCircle />
+      )}
+      <span>{hasPendingChanges ? `未同期: ${pendingCount}件` : '同期済'}</span>
+    </Button>
+  )
+}
+```
+
 ## まとめ
 
 ### 同期の原則
