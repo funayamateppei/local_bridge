@@ -10,9 +10,11 @@ export interface SyncResult {
   errors: string[]
 }
 
+export type SyncProgressCallback = (current: number, total: number, message: string) => void
+
 export class SyncService {
   /**
-   * マスターデータを同期（サーバー → ローカル）
+   * マスターデータを同期(サーバー → ローカル)
    */
   async syncMasterData(): Promise<void> {
     try {
@@ -21,7 +23,7 @@ export class SyncService {
       if (!areasResponse.ok) throw new Error('Failed to fetch areas')
       const areas = await areasResponse.json()
 
-      // ローカルDBを更新（既存データを削除して再作成）
+      // ローカルDBを更新(既存データを削除して再作成)
       await db.areas.clear()
       await db.areas.bulkAdd(areas)
 
@@ -43,7 +45,7 @@ export class SyncService {
   /**
    * 同期キューに基づいてローカルの変更をサーバーに送信
    */
-  async pushLocalChanges(): Promise<SyncResult> {
+  async pushLocalChanges(onProgress?: SyncProgressCallback): Promise<SyncResult> {
     const result: SyncResult = {
       success: true,
       syncedCount: 0,
@@ -52,12 +54,31 @@ export class SyncService {
     }
 
     try {
+      // 全体の未同期アイテム数を取得
+      const totalCount = await syncQueueService.getPendingCount()
+      let processedCount = 0
+
       // 同期順序: inspection → inspectionItem → result → comment → evidence
-      await this.pushQueuedItems('inspection', result)
-      await this.pushQueuedItems('inspectionItem', result)
-      await this.pushQueuedItems('result', result)
-      await this.pushQueuedItems('comment', result)
-      await this.pushQueuedItems('evidence', result)
+      await this.pushQueuedItems('inspection', result, (count) => {
+        processedCount += count
+        onProgress?.(processedCount, totalCount, '検査データを同期中...')
+      })
+      await this.pushQueuedItems('inspectionItem', result, (count) => {
+        processedCount += count
+        onProgress?.(processedCount, totalCount, '検査項目を同期中...')
+      })
+      await this.pushQueuedItems('result', result, (count) => {
+        processedCount += count
+        onProgress?.(processedCount, totalCount, '結果を同期中...')
+      })
+      await this.pushQueuedItems('comment', result, (count) => {
+        processedCount += count
+        onProgress?.(processedCount, totalCount, 'コメントを同期中...')
+      })
+      await this.pushQueuedItems('evidence', result, (count) => {
+        processedCount += count
+        onProgress?.(processedCount, totalCount, 'エビデンスを同期中...')
+      })
 
       console.log(`Sync completed: ${result.syncedCount} synced, ${result.failedCount} failed`)
     } catch (error) {
@@ -73,7 +94,11 @@ export class SyncService {
   /**
    * 特定タイプのキューアイテムを同期
    */
-  private async pushQueuedItems(type: SyncQueueItem['type'], result: SyncResult): Promise<void> {
+  private async pushQueuedItems(
+    type: SyncQueueItem['type'],
+    result: SyncResult,
+    onItemProcessed?: (count: number) => void
+  ): Promise<void> {
     const items = await syncQueueService.getPendingItemsByType(type)
 
     for (const item of items) {
@@ -82,12 +107,14 @@ export class SyncService {
         await this.pushSingleItem(item)
         await syncQueueService.markAsSynced(item.id)
         result.syncedCount++
+        onItemProcessed?.(1)
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error'
         await syncQueueService.updateStatus(item.id, 'failed', errorMessage)
         result.failedCount++
         result.errors.push(`${type}[${item.entityId}]: ${errorMessage}`)
         console.error(`Error pushing ${type} ${item.entityId}:`, error)
+        onItemProcessed?.(1)
       }
     }
   }
@@ -270,12 +297,12 @@ export class SyncService {
   /**
    * 完全同期を実行
    */
-  async fullSync(): Promise<SyncResult> {
+  async fullSync(onProgress?: SyncProgressCallback): Promise<SyncResult> {
     // マスターデータを取得
     await this.syncMasterData()
 
     // ローカルの変更を送信
-    return this.pushLocalChanges()
+    return this.pushLocalChanges(onProgress)
   }
   /**
    * 認証付きのフェッチを実行

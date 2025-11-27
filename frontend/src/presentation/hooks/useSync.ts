@@ -10,11 +10,13 @@ export const useSync = () => {
     pendingCount,
     syncedCount,
     failedCount,
+    progress,
     startSync,
     syncSuccess,
     syncError,
     resetSync,
     setPendingCount,
+    updateProgress,
   } = useSyncStore()
   const [isOnline] = useState(navigator.onLine)
 
@@ -45,7 +47,9 @@ export const useSync = () => {
     startSync()
 
     try {
-      const result = await syncService.fullSync()
+      const result = await syncService.fullSync((current, total, message) => {
+        updateProgress(current, total, message)
+      })
       syncSuccess(result.syncedCount, result.failedCount)
       await refreshPendingCount()
     } catch (err) {
@@ -86,7 +90,9 @@ export const useSync = () => {
     startSync()
 
     try {
-      const result = await syncService.pushLocalChanges()
+      const result = await syncService.pushLocalChanges((current, total, message) => {
+        updateProgress(current, total, message)
+      })
       syncSuccess(result.syncedCount, result.failedCount)
       await refreshPendingCount()
     } catch (err) {
@@ -114,6 +120,7 @@ export const useSync = () => {
     syncedCount,
     failedCount,
     hasPendingChanges: pendingCount > 0,
+    progress,
 
     // Actions
     sync: executeSync,

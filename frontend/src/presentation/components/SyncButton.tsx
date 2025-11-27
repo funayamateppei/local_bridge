@@ -11,6 +11,7 @@ export const SyncButton = () => {
     isSyncing,
     pendingCount,
     hasPendingChanges,
+    progress,
     sync,
   } = useSync()
 
@@ -25,6 +26,9 @@ export const SyncButton = () => {
 
   const getStatusText = () => {
     if (!isOnline) return 'オフライン'
+    if (isSyncing && progress) {
+      return `${progress.message} (${progress.current}/${progress.total})`
+    }
     if (isSyncing) return '同期中...'
     if (hasPendingChanges) return `未同期: ${pendingCount}件`
     if (status === 'success' && lastSyncedAt) {
@@ -42,6 +46,8 @@ export const SyncButton = () => {
     return 'default'
   }
 
+  const progressPercentage = progress ? Math.round((progress.current / progress.total) * 100) : 0
+
   return (
     <div className="flex flex-col gap-2">
       <Button
@@ -53,12 +59,27 @@ export const SyncButton = () => {
       >
         {getStatusIcon()}
         <span>{getStatusText()}</span>
-        {hasPendingChanges && (
+        {hasPendingChanges && !isSyncing && (
           <span className="ml-1 rounded-full bg-orange-500 px-1.5 py-0.5 text-xs text-white">
             {pendingCount}
           </span>
         )}
       </Button>
+
+      {/* 進捗バー */}
+      {isSyncing && progress && (
+        <div className="w-full">
+          <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+            <div
+              className="h-full bg-blue-500 transition-all duration-300"
+              style={{ width: `${progressPercentage}%` }}
+            />
+          </div>
+          <p className="mt-1 text-xs text-gray-600">
+            {progress.current} / {progress.total} 件 ({progressPercentage}%)
+          </p>
+        </div>
+      )}
 
       {error && <p className="text-xs text-red-500">{error}</p>}
     </div>
