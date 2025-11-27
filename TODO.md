@@ -61,10 +61,13 @@
 
 ### 差分同期の実装
 
-- [ ] **マスターデータの差分取得**: 現在は毎回全件取得
+- [x] **マスターデータの差分取得**: ✅ 実装完了
   - `GET /api/master/areas?since={timestamp}` 形式で変更分のみ取得
-  - 最後の同期タイムスタンプをローカルに保存
-  - 実装場所: `SyncService.ts`
+  - 最後の同期タイムスタンプをローカルに保存（`last_master_sync_at`）
+  - 実装場所: `SyncService.ts`, `MasterDataController.kt`
+  - 実装内容:
+    - フロントエンド: 初回は全件取得、2 回目以降は差分取得
+    - バックエンド: `since` パラメータで `updatedAt` 以降のデータを返す
 
 ### エラーハンドリングの強化
 

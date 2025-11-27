@@ -18,22 +18,53 @@ export class SyncService {
    */
   async syncMasterData(): Promise<void> {
     try {
-      // Areas
-      const areasResponse = await this.fetchWithAuth(`${API_BASE_URL}/master/areas`)
+      // 最後の同期タイムスタンプを取得
+      const lastSyncSetting = await db.settings.get('last_master_sync_at')
+      const lastSyncAt = lastSyncSetting?.value as number | undefined
+
+      // Areas - 差分取得
+      const areasUrl = lastSyncAt
+        ? `${API_BASE_URL}/master/areas?since=${lastSyncAt}`
+        : `${API_BASE_URL}/master/areas`
+
+      const areasResponse = await this.fetchWithAuth(areasUrl)
       if (!areasResponse.ok) throw new Error('Failed to fetch areas')
       const areas = await areasResponse.json()
 
-      // ローカルDBを更新(既存データを削除して再作成)
-      await db.areas.clear()
-      await db.areas.bulkAdd(areas)
+      // ローカルDBを更新
+      if (lastSyncAt && areas.length > 0) {
+        // 差分更新: 既存データをマージ
+        await db.areas.bulkPut(areas)
+      } else if (!lastSyncAt) {
+        // 初回同期: 全件置き換え
+        await db.areas.clear()
+        await db.areas.bulkAdd(areas)
+      }
 
-      // Equipments
-      const equipmentsResponse = await this.fetchWithAuth(`${API_BASE_URL}/master/equipments/all`)
+      // Equipments - 差分取得
+      const equipmentsUrl = lastSyncAt
+        ? `${API_BASE_URL}/master/equipments/all?since=${lastSyncAt}`
+        : `${API_BASE_URL}/master/equipments/all`
+
+      const equipmentsResponse = await this.fetchWithAuth(equipmentsUrl)
       if (!equipmentsResponse.ok) throw new Error('Failed to fetch equipments')
       const equipments = await equipmentsResponse.json()
 
-      await db.equipments.clear()
-      await db.equipments.bulkAdd(equipments)
+      // ローカルDBを更新
+      if (lastSyncAt && equipments.length > 0) {
+        // 差分更新: 既存データをマージ
+        await db.equipments.bulkPut(equipments)
+      } else if (!lastSyncAt) {
+        // 初回同期: 全件置き換え
+        await db.equipments.clear()
+        await db.equipments.bulkAdd(equipments)
+      }
+
+      // 同期タイムスタンプを保存
+      await db.settings.put({
+        key: 'last_master_sync_at',
+        value: Date.now(),
+      })
 
       console.log('Master data synced successfully')
     } catch (error) {
