@@ -73,7 +73,7 @@ Local Bridge は、ネットワーク接続が不安定または完全に存在�
 
 ## 🏗 アーキテクチャ概要
 
-このアプリケーションは **2つの異なるアーキテクチャ** を採用しています。
+このアプリケーションは **2 つの異なるアーキテクチャ** を採用しています。
 
 ### Mobile (点検者向け) - Local-First アーキテクチャ
 
@@ -108,7 +108,7 @@ graph LR
 
 ### Desktop (管理者向け) - Online-Only アーキテクチャ
 
-デスクトップ環境では常時オンラインを前提とした **API直接通信** 設計です。
+デスクトップ環境では常時オンラインを前提とした **API 直接通信** 設計です。
 UI は REST API を直接呼び出し、IndexedDB やローカルストレージは使用しません。
 
 ```mermaid
@@ -132,13 +132,13 @@ graph LR
 
 ### Mobile vs Desktop 比較
 
-| 観点 | Mobile (点検者) | Desktop (管理者) |
-|------|----------------|------------------|
-| ネットワーク前提 | オフラインファースト | 常時オンライン |
-| データソース | IndexedDB + OPFS | REST API 直接 |
-| 同期方式 | 手動同期 (SyncQueue) | リアルタイム通信 |
-| Repository | `IMobileInspectionRepository` | `IDesktopInspectionRepository` |
-| 主なユースケース | 現場での点検作業 | タスク管理・レビュー |
+| 観点             | Mobile (点検者)               | Desktop (管理者)               |
+| ---------------- | ----------------------------- | ------------------------------ |
+| ネットワーク前提 | オフラインファースト          | 常時オンライン                 |
+| データソース     | IndexedDB + OPFS              | REST API 直接                  |
+| 同期方式         | 手動同期 (SyncQueue)          | リアルタイム通信               |
+| Repository       | `IMobileInspectionRepository` | `IDesktopInspectionRepository` |
+| 主なユースケース | 現場での点検作業              | タスク管理・レビュー           |
 
 ### 主要技術スタック
 
@@ -239,9 +239,11 @@ sequenceDiagram
         Sync->>LocalDB: sync_statusを'synced'に更新
     end
 
-    Sync->>API: マスターデータ取得
-    API-->>Sync: Area, Equipment, Task
-    Sync->>LocalDB: ローカルDB更新
+    Sync->>LocalDB: last_sync_at 取得
+    Sync->>API: マスターデータ取得 (since=timestamp)
+    API-->>Sync: 差分データ (Area, Equipment)
+    Sync->>LocalDB: ローカルDBマージ (bulkPut)
+    Sync->>LocalDB: last_sync_at 更新
 
     Sync-->>UI: 同期完了
     UI-->>User: 完了通知表示

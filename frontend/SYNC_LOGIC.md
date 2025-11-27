@@ -61,9 +61,12 @@ sequenceDiagram
     Note over SyncService: Phase 2: サーバー→ローカル
 
     rect rgb(220, 250, 200)
-        Note over SyncService,API: マスターデータ取得
-        SyncService->>API: Area, Equipment取得
-        SyncService->>LocalDB: ローカルDB更新
+        Note over SyncService,API: マスターデータ取得 (差分)
+        SyncService->>LocalDB: last_sync_at 取得
+        SyncService->>API: Area, Equipment取得 (since=timestamp)
+        API-->>SyncService: 差分データ
+        SyncService->>LocalDB: ローカルDBマージ (bulkPut)
+        SyncService->>LocalDB: last_sync_at 更新
     end
 
     rect rgb(250, 250, 200)
@@ -88,32 +91,43 @@ sequenceDiagram
 
 **方向**: Server → Client (一方向)
 
-**戦略**: Full Replace (完全置き換え)
+**戦略**: Incremental Sync (差分同期)
 
 ```typescript
 async syncMasterData(): Promise<void> {
-  // サーバーから最新のマスターデータを取得
-  const areas = await api.getAreas()
-  const equipments = await api.getEquipments()
+  // 1. 最後の同期日時を取得
+  const lastSyncSetting = await db.settings.get('last_master_sync_at')
+  const lastSyncAt = lastSyncSetting?.value as number | undefined
 
-  // ローカルDBを完全に置き換え
-  await db.transaction('rw', [db.areas, db.equipments], async () => {
+  // 2. 差分取得 (sinceパラメータ付与)
+  const areasUrl = lastSyncAt
+    ? `${API_BASE_URL}/master/areas?since=${lastSyncAt}`
+    : `${API_BASE_URL}/master/areas`
+
+  const areas = await api.get(areasUrl)
+
+  // 3. ローカルDBに反映
+  if (lastSyncAt && areas.length > 0) {
+    // 差分マージ (既存レコードを更新、新規レコードを追加)
+    await db.areas.bulkPut(areas)
+    console.log(`↻ マスターデータ更新: ${areas.length}件`)
+  } else if (!lastSyncAt) {
+    // 初回同期は全置換
     await db.areas.clear()
     await db.areas.bulkAdd(areas)
+    console.log(`✓ マスターデータ初期化: ${areas.length}件`)
+  }
 
-    await db.equipments.clear()
-    await db.equipments.bulkAdd(equipments)
-  })
-
-  console.log(`✓ マスターデータ同期完了: ${areas.length}エリア, ${equipments.length}設備`)
+  // 4. 同期日時を更新
+  await db.settings.put({ key: 'last_master_sync_at', value: Date.now() })
 }
 ```
 
 **理由**:
 
-- マスターデータは管理者のみが変更
-- クライアント側での変更は想定しない
-- シンプルで確実
+- マスターデータは頻繁に変更されないため、毎回全件取得するのは帯域の無駄
+- タイムスタンプベースの差分同期により、通信量を95%以上削減可能
+- `bulkPut` を使用することで、Insert/Update を自動判別してマージ
 
 ### 2. InspectionTask
 
@@ -340,6 +354,40 @@ async cleanupSyncedEvidences(): Promise<void> {
 // オプション2: 保持(オフライン時の再表示用)
 // → 何もしない
 ```
+
+## 同期進捗の可視化
+
+大量のデータを同期する際、ユーザーに安心感を与えるために進捗状況を可視化します。
+
+### 実装アプローチ
+
+1. **Zustand Store での状態管理**:
+   - `progress` state (current, total, message) を管理
+   - UI コンポーネントはこの state をサブスクライブして表示
+
+2. **SyncService からの通知**:
+   - `pushLocalChanges` や `syncMasterData` メソッドに `onProgress` コールバックを渡す
+   - 処理が進むごとにコールバックを呼び出す
+
+```typescript
+// SyncService.ts
+async pushLocalChanges(onProgress?: SyncProgressCallback): Promise<SyncResult> {
+  const totalCount = await syncQueueService.getPendingCount()
+  let processedCount = 0
+
+  // 各ステップで進捗を更新
+  await this.pushQueuedItems('inspection', result, (count) => {
+    processedCount += count
+    onProgress?.(processedCount, totalCount, '検査データを同期中...')
+  })
+
+  // ...
+}
+```
+
+3. **UI での表示**:
+   - プログレスバーとパーセンテージを表示
+   - 「X / Y 件」のような具体的な数字を表示
 
 ## 同期状態の管理
 
@@ -633,25 +681,20 @@ export const SyncButton: React.FC = () => {
 ### SyncQueueItem スキーマ
 
 ```typescript
-export type SyncQueueItemType =
-  | 'inspection'
-  | 'inspectionItem'
-  | 'result'
-  | 'comment'
-  | 'evidence'
+export type SyncQueueItemType = 'inspection' | 'inspectionItem' | 'result' | 'comment' | 'evidence'
 
 export type SyncQueueStatus = 'pending' | 'syncing' | 'failed'
 
 export interface SyncQueueItem {
-  id: string                // キューアイテムのID（UUID）
-  type: SyncQueueItemType   // エンティティの種類
-  entityId: string          // 対象エンティティのID
-  payload: unknown          // 同期するデータの全体
-  status: SyncQueueStatus   // 同期状態
-  retryCount: number        // リトライ回数
-  createdAt: number         // キュー追加日時
-  lastAttemptAt?: number    // 最後の同期試行日時
-  errorMessage?: string     // エラーメッセージ
+  id: string // キューアイテムのID（UUID）
+  type: SyncQueueItemType // エンティティの種類
+  entityId: string // 対象エンティティのID
+  payload: unknown // 同期するデータの全体
+  status: SyncQueueStatus // 同期状態
+  retryCount: number // リトライ回数
+  createdAt: number // キュー追加日時
+  lastAttemptAt?: number // 最後の同期試行日時
+  errorMessage?: string // エラーメッセージ
 }
 ```
 
@@ -722,11 +765,7 @@ export class SyncQueueService {
   /**
    * 同期キューにアイテムを追加
    */
-  async enqueue(
-    type: SyncQueueItemType,
-    entityId: string,
-    payload: unknown
-  ): Promise<string> {
+  async enqueue(type: SyncQueueItemType, entityId: string, payload: unknown): Promise<string> {
     const id = uuidv4()
     await db.syncQueue.add({
       id,
@@ -747,24 +786,20 @@ export class SyncQueueService {
     return db.syncQueue
       .where('status')
       .anyOf(['pending', 'failed'])
-      .filter(item => item.retryCount < this.MAX_RETRY_COUNT)
+      .filter((item) => item.retryCount < this.MAX_RETRY_COUNT)
       .toArray()
   }
 
   /**
    * ステータス更新
    */
-  async updateStatus(
-    id: string,
-    status: SyncQueueStatus,
-    errorMessage?: string
-  ): Promise<void> {
+  async updateStatus(id: string, status: SyncQueueStatus, errorMessage?: string): Promise<void> {
     await db.syncQueue.update(id, {
       status,
       lastAttemptAt: Date.now(),
       ...(status === 'failed' && {
         retryCount: (await db.syncQueue.get(id))!.retryCount + 1,
-        errorMessage
+        errorMessage,
       }),
     })
   }
