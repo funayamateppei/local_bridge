@@ -94,14 +94,14 @@ graph TD
 
 ### Desktop vs Mobile アーキテクチャの違い
 
-| 項目 | Desktop | Mobile |
-|------|---------|--------|
-| **対象ユーザー** | 管理者 | 点検者 |
-| **ネットワーク** | オンライン専用 | オフライン対応 |
-| **データソース** | API直接呼び出し | IndexedDB (Local-First) |
-| **Repository** | `DesktopInspectionRepositoryImpl` | `MobileInspectionRepositoryImpl` |
-| **同期** | 不要（常時オンライン） | 手動同期ボタン |
-| **ファイル保存** | サーバーのみ | OPFS + サーバー |
+| 項目             | Desktop                           | Mobile                           |
+| ---------------- | --------------------------------- | -------------------------------- |
+| **対象ユーザー** | 管理者                            | 点検者                           |
+| **ネットワーク** | オンライン専用                    | オフライン対応                   |
+| **データソース** | API直接呼び出し                   | IndexedDB (Local-First)          |
+| **Repository**   | `DesktopInspectionRepositoryImpl` | `MobileInspectionRepositoryImpl` |
+| **同期**         | 不要（常時オンライン）            | 手動同期ボタン                   |
+| **ファイル保存** | サーバーのみ                      | OPFS + サーバー                  |
 
 この設計により、管理者（Desktop）は常に最新のサーバーデータを参照でき、点検者（Mobile）は不安定なネットワーク環境でも作業を継続できます。
 
@@ -123,9 +123,11 @@ sequenceDiagram
     SyncService->>API: 変更をサーバーに送信
     API-->>SyncService: 成功レスポンス
 
-    SyncService->>API: サーバーからマスターデータ取得
-    API-->>SyncService: マスターデータ
-    SyncService->>LocalDB: ローカルDBを更新
+    SyncService->>LocalDB: last_sync_at 取得
+    SyncService->>API: サーバーからマスターデータ取得 (since=timestamp)
+    API-->>SyncService: 差分データ
+    SyncService->>LocalDB: ローカルDBを更新 (bulkPut)
+    SyncService->>LocalDB: last_sync_at 更新
 
     SyncService-->>UI: 同期完了
     UI-->>User: 完了通知

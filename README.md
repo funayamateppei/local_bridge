@@ -239,11 +239,9 @@ sequenceDiagram
         Sync->>LocalDB: sync_statusを'synced'に更新
     end
 
-    Sync->>LocalDB: last_sync_at 取得
-    Sync->>API: マスターデータ取得 (since=timestamp)
-    API-->>Sync: 差分データ (Area, Equipment)
-    Sync->>LocalDB: ローカルDBマージ (bulkPut)
-    Sync->>LocalDB: last_sync_at 更新
+    Sync->>API: マスターデータ取得
+    API-->>Sync: Area, Equipment, Task
+    Sync->>LocalDB: ローカルDB更新
 
     Sync-->>UI: 同期完了
     UI-->>User: 完了通知表示

@@ -49,9 +49,11 @@ Local Bridge は、オフラインファーストで動作する設備点検（I
 
 - **戦略**: **Local-First / Eventual Consistency**
 - **Master Data**: サーバー → クライアントの一方向同期（Area, Equipment）。
+  - **Incremental Sync**: タイムスタンプベースの差分同期を採用し、通信量を削減。
 - **Transaction Data**: 双方向同期。
   - **Upstream**: ローカルの未送信データをサーバーへ POST。
   - **Downstream**: サーバーの更新データをローカルへ Fetch。
+- **Progress Visualization**: 同期処理の進捗（件数、パーセンテージ）を UI にリアルタイム表示。
 - **Conflict Resolution**: **Last Write Wins** (LWW) を基本とするが、ステータス遷移などはサーバー側のロジックで整合性を保つ。
 
 ### 3.5 オフライン対応 (PWA)
