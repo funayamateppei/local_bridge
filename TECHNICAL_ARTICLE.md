@@ -202,7 +202,7 @@ export class OPFSStorage {
 「OPFS って本当に使えるの？」という疑問を持つ方も多いかと思います。2024 年現在、主要ブラウザすべてで対応済みです。
 
 | ブラウザ | 対応バージョン |
-|----------|----------------|
+| -------- | -------------- |
 | Chrome   | 86+            |
 | Edge     | 86+            |
 | Safari   | 15.2+          |
@@ -214,11 +214,11 @@ export class OPFSStorage {
 
 Local-First を検討する際に気になるのが「ローカルにどれだけデータを保存できるか」です。
 
-| ブラウザ | 制限                                           |
-|----------|------------------------------------------------|
-| Chrome   | ディスク容量の最大 60%                         |
-| Firefox  | 無制限（ユーザー許可後）                       |
-| Safari   | 約 1GB（7 日間未使用で削除リスクあり）         |
+| ブラウザ | 制限                                   |
+| -------- | -------------------------------------- |
+| Chrome   | ディスク容量の最大 60%                 |
+| Firefox  | 無制限（ユーザー許可後）               |
+| Safari   | 約 1GB（7 日間未使用で削除リスクあり） |
 
 Safari の制限は注意が必要ですが、**PWA としてホーム画面に追加すると制限が緩和**されます。本アプリのように PWA 化を前提とする場合、実用上の問題にはなりにくいでしょう。
 
@@ -270,7 +270,56 @@ async createReInspection(originalId: string): Promise<string> {
 
 ---
 
-## 6. 同期ロジックと競合解決
+## 6. Local-First における認証戦略
+
+Local-First アプリでは、認証も「オフライン」を前提に考える必要があります。
+単に JWT を保存しておくだけでは、現場で突然ログアウトされて作業が中断するリスクがあります。
+
+### JWT + リフレッシュトークン
+
+私たちは以下の構成を採用しました：
+
+1.  **アクセストークン (有効期限: 1 時間)**
+
+    - 短命にすることで、万が一漏洩した際のリスクを最小化します。
+    - API リクエストごとの認証に使用します。
+
+2.  **リフレッシュトークン (有効期限: 30 日)**
+    - 長命なトークンで、アクセストークンの再発行に使用します。
+    - ユーザーが頻繁にログインし直す手間を省きます。
+
+### オフライン時の「ログアウト回避」ロジック
+
+最も重要なのが、**「オフライン時にトークンの有効期限が切れたらどうするか？」** という問題です。
+
+通常、リフレッシュトークンを使って新しいアクセストークンを取得しようとしますが、オフライン（またはサーバーダウン）の場合は失敗します。
+ここで安易に「更新失敗＝ログアウト」としてしまうと、**「電波の悪い地下で作業していたら、突然アプリから追い出されてデータが見られなくなった」** という最悪の UX を招きます。
+
+そこで、`AuthProvider` に以下のロジックを実装しました：
+
+```typescript
+try {
+  // リフレッシュトークンで更新を試みる
+  const response = await fetch('/api/auth/refresh', { ... })
+  // ...成功時の処理...
+} catch (e) {
+  // ネットワークエラーなどでリフレッシュできない場合は、
+  // オフライン利用を継続させるためにログアウトせずに終了する
+  // (サーバーから明示的に拒否されたわけではないため)
+  console.error('Refresh failed (Network Error):', e)
+  return // ログアウトしない！
+}
+
+// サーバーから 401/403 が返ってきた場合のみログアウト
+await logout()
+```
+
+これにより、**「サーバーが明示的に拒否しない限り、ローカルでの作業は継続できる」** という Local-First の原則を守っています。
+もちろん、この状態で同期を行おうとすると失敗しますが、データの閲覧や新規作成は可能です。
+
+---
+
+## 7. 同期ロジックと競合解決
 
 Local-First における最大の課題は「同期」と「競合解決」です。
 私たちは **「手動同期」** と **「データ特性に応じた競合解決戦略」** を採用しました。
@@ -330,7 +379,8 @@ async saveResult(result: InspectionResult): Promise<void> {
 ```
 
 **ポイント**:
-- UI更新は即座（<10ms）で完了
+
+- UI 更新は即座（<10ms）で完了
 - サーバー同期は非同期で実行されるため、ユーザーを待たせない
 
 #### 同期キューのスキーマ
@@ -339,12 +389,12 @@ IndexedDB に `syncQueue` テーブルを追加し、未同期データを永続
 
 ```typescript
 interface SyncQueueItem {
-  id: string                // キューアイテムのID
-  type: 'inspection' | 'inspectionItem' | 'result' | 'comment' | 'evidence'
-  entityId: string          // 対象エンティティのID
-  payload: unknown          // 同期するデータの全体
-  status: 'pending' | 'syncing' | 'failed'
-  retryCount: number        // リトライ回数（最大3回）
+  id: string // キューアイテムのID
+  type: "inspection" | "inspectionItem" | "result" | "comment" | "evidence"
+  entityId: string // 対象エンティティのID
+  payload: unknown // 同期するデータの全体
+  status: "pending" | "syncing" | "failed"
+  retryCount: number // リトライ回数（最大3回）
   createdAt: number
   errorMessage?: string
 }
@@ -352,7 +402,7 @@ interface SyncQueueItem {
 
 #### 同期の実行順序
 
-依存関係を考慮し、親→子の順序で同期を実行します：
+依存関係を考慮し、親 → 子の順序で同期を実行します：
 
 ```
 inspection → inspectionItem → result → comment → evidence
@@ -360,22 +410,14 @@ inspection → inspectionItem → result → comment → evidence
 
 これにより、外部キー制約違反を防ぎます。
 
-#### UIでの未同期件数表示
+#### UI での未同期件数表示
 
 ユーザーが未同期データの存在を認識できるよう、同期ボタンに件数を表示します：
 
 ```tsx
 const { pendingCount, hasPendingChanges, sync } = useSync()
 
-return (
-  <Button onClick={sync}>
-    {hasPendingChanges ? (
-      <>未同期: {pendingCount}件</>
-    ) : (
-      <>同期済</>
-    )}
-  </Button>
-)
+return <Button onClick={sync}>{hasPendingChanges ? <>未同期: {pendingCount}件</> : <>同期済</>}</Button>
 ```
 
 ### UI は「常に」IndexedDB を見る
@@ -452,7 +494,7 @@ if (serverTask.updatedAt > localTask.updatedAt) {
 
 ---
 
-## 7. バックエンドの役割：実は「普通の REST API」でいい
+## 8. バックエンドの役割：実は「普通の REST API」でいい
 
 Local-First アーキテクチャの隠れたメリットは、**バックエンドがシンプルになること**です。
 
@@ -470,14 +512,14 @@ Local-First アーキテクチャの隠れたメリットは、**バックエン
 | ------------------ | ---------- | -------------------------------------------------------------------- |
 | **同期タイミング** | **Client** | 通信環境を知っているのはクライアントだけだから                       |
 | **競合解決**       | **Client** | ユーザーの意図（どれを残すか）を確認できるのはクライアントだけだから |
-| **データの永続化** | **Server** | 長期保存・バックアップ・共有のためのセカンダリストレージ            |
+| **データの永続化** | **Server** | 長期保存・バックアップ・共有のためのセカンダリストレージ             |
 
 結果として、バックエンドは **Spring Boot で作られたごく一般的な REST API** となりました。
 特別な同期プロトコルや WebSocket などは使用せず、シンプルな CRUD エンドポイントを提供するだけで、この高度なオフライン機能を実現します。
 
 ---
 
-## 8. なぜネイティブアプリではなく PWA なのか？
+## 9. なぜネイティブアプリではなく PWA なのか？
 
 Local-First なアプリを作るなら、iOS/Android のネイティブアプリで作るのが王道かもしれません。しかし、私たちはあえて **PWA (Progressive Web Apps)** を採用しました。
 
@@ -500,7 +542,7 @@ Local-First なアプリを作るなら、iOS/Android のネイティブアプ�
 
 ---
 
-## 9. まとめ：Local-First がもたらす UX 変革
+## 10. まとめ：Local-First がもたらす UX 変革
 
 このアーキテクチャを採用したことで、以下の成果が得られました：
 

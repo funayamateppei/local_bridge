@@ -10,13 +10,25 @@ import java.util.Date
 @Component
 class JwtTokenProvider(
     @Value("\${jwt.secret:secretKey}") private val secretKey: String,
-    @Value("\${jwt.expiration:2592000000}") private val validityInMilliseconds: Long // 30 days
+    @Value("\${jwt.expiration:3600000}") private val validityInMilliseconds: Long, // 1 hour
+    @Value("\${jwt.refresh-expiration:2592000000}") private val refreshValidityInMilliseconds: Long // 30 days
 ) {
     private val algorithm = Algorithm.HMAC256(secretKey)
 
     fun createToken(username: String): String {
         val now = Date()
         val validity = Date(now.time + validityInMilliseconds)
+
+        return JWT.create()
+            .withSubject(username)
+            .withIssuedAt(now)
+            .withExpiresAt(validity)
+            .sign(algorithm)
+    }
+
+    fun createRefreshToken(username: String): String {
+        val now = Date()
+        val validity = Date(now.time + refreshValidityInMilliseconds)
 
         return JWT.create()
             .withSubject(username)

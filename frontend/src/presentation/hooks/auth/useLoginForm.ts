@@ -16,7 +16,7 @@ export const useLoginForm = () => {
       setError('')
       try {
         const response = await authRepository.login({ username, password: 'password' }) // TODO: パスワード入力を追加するまで仮置き
-        await login(response.token)
+        await login(response.token, response.refreshToken)
         navigate(Routing.Root.path)
       } catch (err) {
         console.error(err)

@@ -299,10 +299,40 @@ export class SyncService {
       headers,
     })
 
-    // 401 Unauthorized の場合はログアウト処理
+    // 401 Unauthorized の場合はリフレッシュを試みる
     if (response.status === 401) {
-      console.warn('Unauthorized access detected. Clearing token and reloading.')
+      console.warn('Unauthorized access detected. Trying to refresh token...')
+
+      try {
+        const refreshTokenItem = await db.settings.get('refresh_token')
+        if (refreshTokenItem && refreshTokenItem.value) {
+          const refreshResponse = await fetch(`${API_BASE_URL}/auth/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken: refreshTokenItem.value }),
+          })
+
+          if (refreshResponse.ok) {
+            const data = await refreshResponse.json()
+            await db.settings.put({ key: 'auth_token', value: data.token })
+            await db.settings.put({ key: 'refresh_token', value: data.refreshToken })
+
+            // 新しいトークンでリトライ
+            headers['Authorization'] = `Bearer ${data.token}`
+            return await fetch(url, {
+              ...options,
+              headers,
+            })
+          }
+        }
+      } catch (e) {
+        console.error('Failed to refresh token during sync:', e)
+      }
+
+      // リフレッシュ失敗時はログアウト
+      console.warn('Refresh failed. Clearing token and reloading.')
       await db.settings.delete('auth_token')
+      await db.settings.delete('refresh_token')
       window.location.reload()
       throw new Error('Unauthorized')
     }
