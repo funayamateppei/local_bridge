@@ -17,7 +17,7 @@ export class SyncService {
   async syncMasterData(): Promise<void> {
     try {
       // Areas
-      const areasResponse = await fetch(`${API_BASE_URL}/master/areas`)
+      const areasResponse = await this.fetchWithAuth(`${API_BASE_URL}/master/areas`)
       if (!areasResponse.ok) throw new Error('Failed to fetch areas')
       const areas = await areasResponse.json()
 
@@ -26,7 +26,7 @@ export class SyncService {
       await db.areas.bulkAdd(areas)
 
       // Equipments
-      const equipmentsResponse = await fetch(`${API_BASE_URL}/master/equipments/all`)
+      const equipmentsResponse = await this.fetchWithAuth(`${API_BASE_URL}/master/equipments/all`)
       if (!equipmentsResponse.ok) throw new Error('Failed to fetch equipments')
       const equipments = await equipmentsResponse.json()
 
@@ -73,10 +73,7 @@ export class SyncService {
   /**
    * 特定タイプのキューアイテムを同期
    */
-  private async pushQueuedItems(
-    type: SyncQueueItem['type'],
-    result: SyncResult
-  ): Promise<void> {
+  private async pushQueuedItems(type: SyncQueueItem['type'], result: SyncResult): Promise<void> {
     const items = await syncQueueService.getPendingItemsByType(type)
 
     for (const item of items) {
@@ -121,7 +118,7 @@ export class SyncService {
   }
 
   private async pushInspection(payload: Record<string, unknown>): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/inspections`, {
+    const response = await this.fetchWithAuth(`${API_BASE_URL}/inspections`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -140,7 +137,7 @@ export class SyncService {
   }
 
   private async pushInspectionItem(payload: Record<string, unknown>): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/inspections/items`, {
+    const response = await this.fetchWithAuth(`${API_BASE_URL}/inspections/items`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -162,7 +159,7 @@ export class SyncService {
   }
 
   private async pushResult(payload: Record<string, unknown>): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/inspections/results`, {
+    const response = await this.fetchWithAuth(`${API_BASE_URL}/inspections/results`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -182,7 +179,7 @@ export class SyncService {
   }
 
   private async pushComment(payload: Record<string, unknown>): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/inspections/comments`, {
+    const response = await this.fetchWithAuth(`${API_BASE_URL}/inspections/comments`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -203,7 +200,7 @@ export class SyncService {
   private async pushEvidence(payload: Record<string, unknown>): Promise<void> {
     // TODO: S3 Presigned URL取得とアップロード実装
     // 現在はメタデータのみ送信
-    const response = await fetch(`${API_BASE_URL}/inspections/evidences`, {
+    const response = await this.fetchWithAuth(`${API_BASE_URL}/inspections/evidences`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -279,6 +276,38 @@ export class SyncService {
 
     // ローカルの変更を送信
     return this.pushLocalChanges()
+  }
+  /**
+   * 認証付きのフェッチを実行
+   */
+  private async fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
+    const token = await db.settings.get('auth_token')
+    const headers: Record<string, string> = {}
+
+    // 既存のヘッダーをコピー
+    if (options.headers) {
+      Object.assign(headers, options.headers)
+    }
+
+    // トークンがあればAuthorizationヘッダーを追加
+    if (token && token.value) {
+      headers['Authorization'] = `Bearer ${token.value}`
+    }
+
+    const response = await fetch(url, {
+      ...options,
+      headers,
+    })
+
+    // 401 Unauthorized の場合はログアウト処理
+    if (response.status === 401) {
+      console.warn('Unauthorized access detected. Clearing token and reloading.')
+      await db.settings.delete('auth_token')
+      window.location.reload()
+      throw new Error('Unauthorized')
+    }
+
+    return response
   }
 }
 

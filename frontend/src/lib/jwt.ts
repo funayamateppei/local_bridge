@@ -30,3 +30,15 @@ export const getUsernameFromToken = (token: string): string | null => {
   const username = payload.sub || payload.username
   return typeof username === 'string' ? username : null
 }
+
+/**
+ * JWT トークンが有効期限切れかチェックする
+ */
+export const isTokenExpired = (token: string): boolean => {
+  const payload = decodeJwt(token)
+  if (!payload || typeof payload.exp !== 'number') return true
+
+  // exp は秒単位のタイムスタンプ
+  const now = Math.floor(Date.now() / 1000)
+  return payload.exp < now
+}

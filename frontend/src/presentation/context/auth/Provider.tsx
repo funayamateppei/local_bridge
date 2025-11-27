@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { db } from '@/infrastructure/db'
-import { getUsernameFromToken } from '@/lib/jwt'
+import { getUsernameFromToken, isTokenExpired } from '@/lib/jwt'
 import { AuthContext } from './context'
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
@@ -13,9 +13,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       try {
         const token = await db.settings.get('auth_token')
         if (token && token.value) {
-          setIsAuthenticated(true)
-          const user = getUsernameFromToken(token.value as string)
-          setUsername(user)
+          const tokenValue = token.value as string
+          if (isTokenExpired(tokenValue)) {
+            console.log('Token expired, clearing auth state')
+            await db.settings.delete('auth_token')
+            setIsAuthenticated(false)
+            setUsername(null)
+          } else {
+            setIsAuthenticated(true)
+            const user = getUsernameFromToken(tokenValue)
+            setUsername(user)
+          }
         }
       } catch (error) {
         console.error('Failed to restore auth state:', error)
