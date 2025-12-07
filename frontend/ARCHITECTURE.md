@@ -150,7 +150,7 @@ sequenceDiagram
 
     SyncService->>LocalDB: last_sync_at 取得
     SyncService->>API: サーバーからマスターデータ取得 (since=timestamp)
-    API-->>SyncService: 差分データ
+    API-->>SyncService: 更新データ
     SyncService->>LocalDB: ローカルDBを更新 (bulkPut)
     SyncService->>LocalDB: last_sync_at 更新
 

@@ -64,12 +64,12 @@ graph TD
 #### マスターデータ
 
 ```
-GET    /api/areas?since={ts} # エリア一覧取得 (差分対応)
+GET    /api/areas?since={ts} # エリア一覧取得 (増分取得対応)
 POST   /api/areas           # エリア作成
 PUT    /api/areas/:id       # エリア更新
 DELETE /api/areas/:id       # エリア削除
 
-GET    /api/equipments?since={ts} # 設備一覧取得 (差分対応)
+GET    /api/equipments?since={ts} # 設備一覧取得 (増分取得対応)
 POST   /api/equipments      # 設備作成
 PUT    /api/equipments/:id  # 設備更新
 DELETE /api/equipments/:id  # 設備削除
