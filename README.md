@@ -256,9 +256,11 @@ sequenceDiagram
         Sync->>CommandQueue: Command を削除
     end
 
-    Sync->>API: マスターデータ取得
-    API-->>Sync: Area, Equipment
-    Sync->>LocalDB: ローカル DB 更新
+    Sync->>LocalDB: last_sync_at 取得
+    Sync->>API: マスターデータ取得 (since=timestamp)
+    API-->>Sync: 更新データ
+    Sync->>LocalDB: ローカル DB 更新 (bulkPut)
+    Sync->>LocalDB: last_sync_at 更新
 
     Sync-->>UI: 同期完了
     UI-->>User: 完了通知表示
@@ -266,13 +268,13 @@ sequenceDiagram
 
 ### データの同期方向
 
-| データ種類          | 同期方向        | 説明                         |
-| ------------------- | --------------- | ---------------------------- |
-| Area, Equipment     | Server → Client | マスターデータ。管理者が設定 |
-| InspectionTask      | Server → Client | 管理者が作成したタスク       |
-| InspectionResult    | Client → Server | 点検者が登録した結果         |
-| Evidence (ファイル) | Client → Server | 写真・動画をアップロード     |
-| InspectionComment   | Bi-directional  | コメントは双方向同期         |
+| データ種類          | 同期方向        | 説明                                             |
+| ------------------- | --------------- | ------------------------------------------------ |
+| Area, Equipment     | Server → Client | マスターデータ。増分取得（since=timestamp）対応  |
+| InspectionTask      | Server → Client | 管理者が作成したタスク                           |
+| InspectionResult    | Client → Server | 点検者が登録した結果                             |
+| Evidence (ファイル) | Client → Server | 写真・動画をアップロード                         |
+| InspectionComment   | Bi-directional  | コメントは双方向同期                             |
 
 ### 同期のタイミング
 
