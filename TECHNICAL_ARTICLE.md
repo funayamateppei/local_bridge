@@ -1,3 +1,11 @@
+<!--
+【記事のコンセプト】
+- プロダクト（点検アプリ）の機能紹介ではなく、「Local-First」というアーキテクチャパターンの実践的な解説記事。
+- 「待たせないUX」を実現するための技術的アプローチ（IndexedDB, OPFS, Dual Write, Clean Architecture）に焦点を当てる。
+- 読者が自身のプロジェクトでLocal-Firstを採用する際の判断材料や実装のヒントを提供することを目的とする。
+- UXそのもの（再検査フローなど）よりも、そのUXを支える「設計」を重視して記述する。
+-->
+
 # 【React/TypeScript】完全オフライン動作する「Local-First」な点検アプリのアーキテクチャ設計
 
 ## はじめに
@@ -136,8 +144,8 @@ export class MobileInspectionRepositoryImpl implements IMobileInspectionReposito
 今回の技術的なハイライトの一つが **OPFS** です。
 従来の Web アプリでは、画像を扱う際に以下の問題がありました：
 
-1. **IndexedDB に Blob を入れる**: 読み書きが遅く、ブラウザ全体のパフォーマンスを低下させる。
-2. **Base64 エンコード**: データサイズが約 1.3 倍になり、メモリ効率が悪い。
+1.  **IndexedDB に Blob を入れる**: 読み書きが遅く、ブラウザ全体のパフォーマンスを低下させる。
+2.  **Base64 エンコード**: データサイズが約 1.3 倍になり、メモリ効率が悪い。
 
 OPFS は、オリジンごとに隔離されたプライベートなファイルシステムを提供し、これらの問題を解決します。
 
@@ -224,49 +232,42 @@ Safari の制限は注意が必要ですが、**PWA としてホーム画面に�
 
 ---
 
-## 5. 再検査ワークフローの実装
+## 5. Dual Write & Sync Queue 戦略
 
-設備点検において重要なのが「NG だった項目の再検査」です。
-本アプリでは、以下のフローで再検査を実現しています。
+オフライン時の操作を確実に記録し、かつユーザーの操作性を損なわないために、**Dual Write（二重書き込み）** 戦略を採用しました。
+これは、ユーザーのアクションに対して、以下の 2 つの保存処理を同時に行うものです。
 
-1. **検査完了**: すべての項目をチェックし、ステータスを `Done` にする。
-2. **NG 抽出**: `Done` になった検査の中に `NG` 判定の項目がある場合、「再検査を作成」ボタンが有効化される。
-3. **新規作成**: ボタンを押すと、**NG 項目のみをコピーした新しい検査データ** が作成される（UUID を新規採番）。
-4. **履歴保持**: 元の検査データは変更されず、履歴として残る。
+### 仕組み
 
-```typescript
-// src/infrastructure/services/ReInspectionService.ts
-async createReInspection(originalId: string): Promise<string> {
-  // 1. 元の検査と項目を取得
-  const original = await db.inspections.get(originalId)
-  const items = await db.inspectionItems.where('inspectionId').equals(originalId).toArray()
+1.  **ローカルデータ本体 (IndexedDB) への書き込み**
+    - 目的: **UI への即時反映 (Optimistic UI)**
+    - 特徴: 常に最新の状態を保持します。ユーザーが画面で見るのはこのデータです。
+2.  **同期キュー (Sync Queue) への追加**
+    - 目的: **サーバー同期用ログの蓄積**
+    - 特徴: 「何を」「どの ID で」「どう変更したか」という操作ログを時系列順に保存します。
 
-  // 2. NG項目のみフィルタリング
-  const ngItems = await this.filterNGItems(items)
+### データフロー
 
-  // 3. 新しい検査を作成
-  const newId = uuidv4()
-  await db.inspections.add({
-    id: newId,
-    title: `Re-inspection: ${original.title}`,
-    status: 'todo',
-    // ...
-  })
+```mermaid
+graph TD
+    User[ユーザー操作] -->|保存/更新| Repo[Repository Layer]
 
-  // 4. NG項目をコピー
-  for (const item of ngItems) {
-    await db.inspectionItems.add({
-      id: uuidv4(),
-      inspectionId: newId,
-      // ...
-    })
-  }
+    subgraph "Dual Write Process"
+        Repo -->|1. 即時保存| LocalDB[ローカルデータ本体]
+        Repo -->|2. キュー追加| Queue[同期キュー]
+    end
 
-  return newId
-}
+    LocalDB -->|データ参照| UI[画面表示]
+    Queue -->|同期トリガー| Server[サーバーAPI]
+
+    note1[UIは即座に更新されるため<br/>待ち時間ゼロ]
+    note2[オフラインの間<br/>ここに操作が溜まり続ける]
+
+    UI -.- note1
+    Queue -.- note2
 ```
 
-この設計により、「過去の点検結果を改ざんすることなく、不具合箇所の是正確認を行う」という業務要件を満たしています。
+この設計により、**「UI は常にサクサク動きつつ、裏側で確実にサーバーへの送信待ち行列を作る」** ことが可能になります。
 
 ---
 
@@ -322,7 +323,6 @@ await logout()
 ## 7. 同期ロジックと競合解決
 
 Local-First における最大の課題は「同期」と「競合解決」です。
-私たちは **「手動同期」** と **「データ特性に応じた競合解決戦略」** を採用しました。
 
 ### クライアントサイド ID 生成 (Client-side ID Generation)
 
@@ -349,76 +349,12 @@ Local Bridge では、以下の戦略を採用しています：
 
 - **Upstream (Client → Server)**:
 
-  - ローカルで作成・更新されたデータ（Inspection, InspectionItem, Result, Comment, Evidence）をサーバーへ送信します。
-  - `fetch` API を使用して JSON 形式で POST します。
+  - 同期キューに溜まった操作ログを順次送信します。
+  - 依存関係（親データ → 子データ）を考慮した順序で処理されます。
   - Evidence（画像）は、メタデータを送信した後、S3 へのアップロード処理を行います（Presigned URL 利用）。
 
 - **Downstream (Server → Client)**:
   - サーバー側で更新されたデータ（他のユーザーによる実施結果など）を取得し、ローカル DB にマージします。
-
-### 同期キューの永続化と楽観的更新
-
-Local-First で重要なのは **「データの損失を防ぐこと」** です。
-アプリが予期せずクラッシュしたり、ブラウザが閉じられた場合でも、未同期データを失わないように設計しました。
-
-#### 楽観的更新パターン
-
-ユーザーがデータを保存する際、以下の流れで処理します：
-
-```typescript
-async saveResult(result: InspectionResult): Promise<void> {
-  const id = uuidv4()
-  const newResult = { id, ...result, createdAt: Date.now() }
-
-  // 1. 即座にローカルDBに保存（楽観的更新）
-  await db.inspectionResults.add(newResult)
-
-  // 2. 同期キューに追加（後で同期）
-  await syncQueueService.enqueue('result', id, newResult)
-}
-```
-
-**ポイント**:
-
-- UI 更新は即座（<10ms）で完了
-- サーバー同期は非同期で実行されるため、ユーザーを待たせない
-
-#### 同期キューのスキーマ
-
-IndexedDB に `syncQueue` テーブルを追加し、未同期データを永続化します：
-
-```typescript
-interface SyncQueueItem {
-  id: string // キューアイテムのID
-  type: "inspection" | "inspectionItem" | "result" | "comment" | "evidence"
-  entityId: string // 対象エンティティのID
-  payload: unknown // 同期するデータの全体
-  status: "pending" | "syncing" | "failed"
-  retryCount: number // リトライ回数（最大3回）
-  createdAt: number
-  errorMessage?: string
-}
-```
-
-#### 同期の実行順序
-
-依存関係を考慮し、親 → 子の順序で同期を実行します：
-
-```
-inspection → inspectionItem → result → comment → evidence
-```
-
-これにより、外部キー制約違反を防ぎます。
-
-#### UI での未同期件数表示
-
-ユーザーが未同期データの存在を認識できるよう、同期ボタンに件数を表示します：
-
-```tsx
-const { pendingCount, hasPendingChanges, sync } = useSync()
-
-return <Button onClick={sync}>{hasPendingChanges ? <>未同期: {pendingCount}件</> : <>同期済</>}</Button>
-```
 
 ### UI は「常に」IndexedDB を見る
 
@@ -449,9 +385,9 @@ Local-First の文脈でよく登場する **CRDT (Conflict-free Replicated Data
 
 しかし、本アプリでは以下の理由から採用を見送りました：
 
-1. **単一ユーザー・単一デバイスが前提**: 点検員は基本的に 1 台の端末で作業する
-2. **Append-Only で十分**: 結果は追記のみで、競合が発生しない設計
-3. **実装の複雑性**: Yjs, Automerge などのライブラリは学習コストが高く、デバッグも難しい
+1.  **単一ユーザー・単一デバイスが前提**: 点検員は基本的に 1 台の端末で作業する
+2.  **Append-Only で十分**: 結果は追記のみで、競合が発生しない設計
+3.  **実装の複雑性**: Yjs, Automerge などのライブラリは学習コストが高く、デバッグも難しい
 
 CRDT は強力ですが、すべての Local-First アプリに必要なわけではありません。**ユースケースに応じて適切な競合解決戦略を選ぶことが重要**です。
 
