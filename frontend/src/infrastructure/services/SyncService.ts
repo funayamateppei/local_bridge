@@ -1,5 +1,5 @@
-import { db, type SyncQueueItem } from '@/infrastructure/db'
-import { syncQueueService } from '@/infrastructure/services/SyncQueueService'
+import { db, type Command, type CommandType } from '@/infrastructure/db'
+import { commandService } from '@/infrastructure/services/CommandService'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
 
@@ -11,6 +11,17 @@ export interface SyncResult {
 }
 
 export type SyncProgressCallback = (current: number, total: number, message: string) => void
+
+// Command実行順序を定義（依存関係を考慮）
+const COMMAND_EXECUTION_ORDER: CommandType[] = [
+  'CREATE_INSPECTION',
+  'UPDATE_INSPECTION_STATUS',
+  'CREATE_INSPECTION_ITEM',
+  'UPDATE_INSPECTION_ITEM_STATUS',
+  'CREATE_RESULT',
+  'CREATE_COMMENT',
+  'CREATE_EVIDENCE',
+]
 
 export class SyncService {
   /**
@@ -74,7 +85,8 @@ export class SyncService {
   }
 
   /**
-   * 同期キューに基づいてローカルの変更をサーバーに送信
+   * Commandキューに基づいてローカルの操作をサーバーに反映
+   * Command方式: 操作ログを順番に実行するだけ（順序管理不要）
    */
   async pushLocalChanges(onProgress?: SyncProgressCallback): Promise<SyncResult> {
     const result: SyncResult = {
@@ -85,31 +97,17 @@ export class SyncService {
     }
 
     try {
-      // 全体の未同期アイテム数を取得
-      const totalCount = await syncQueueService.getPendingCount()
+      // 全体の未実行Command数を取得
+      const totalCount = await commandService.getPendingCount()
       let processedCount = 0
 
-      // 同期順序: inspection → inspectionItem → result → comment → evidence
-      await this.pushQueuedItems('inspection', result, (count) => {
-        processedCount += count
-        onProgress?.(processedCount, totalCount, '検査データを同期中...')
-      })
-      await this.pushQueuedItems('inspectionItem', result, (count) => {
-        processedCount += count
-        onProgress?.(processedCount, totalCount, '検査項目を同期中...')
-      })
-      await this.pushQueuedItems('result', result, (count) => {
-        processedCount += count
-        onProgress?.(processedCount, totalCount, '結果を同期中...')
-      })
-      await this.pushQueuedItems('comment', result, (count) => {
-        processedCount += count
-        onProgress?.(processedCount, totalCount, 'コメントを同期中...')
-      })
-      await this.pushQueuedItems('evidence', result, (count) => {
-        processedCount += count
-        onProgress?.(processedCount, totalCount, 'エビデンスを同期中...')
-      })
+      // Command種別ごとに実行（依存関係順）
+      for (const commandType of COMMAND_EXECUTION_ORDER) {
+        await this.executeCommandsByType(commandType, result, (count) => {
+          processedCount += count
+          onProgress?.(processedCount, totalCount, this.getProgressMessage(commandType))
+        })
+      }
 
       console.log(`Sync completed: ${result.syncedCount} synced, ${result.failedCount} failed`)
     } catch (error) {
@@ -123,53 +121,75 @@ export class SyncService {
   }
 
   /**
-   * 特定タイプのキューアイテムを同期
+   * 進捗メッセージを取得
    */
-  private async pushQueuedItems(
-    type: SyncQueueItem['type'],
+  private getProgressMessage(type: CommandType): string {
+    const messages: Record<CommandType, string> = {
+      CREATE_INSPECTION: '検査データを作成中...',
+      UPDATE_INSPECTION_STATUS: '検査ステータスを更新中...',
+      CREATE_INSPECTION_ITEM: '検査項目を作成中...',
+      UPDATE_INSPECTION_ITEM_STATUS: '項目ステータスを更新中...',
+      CREATE_RESULT: '結果を登録中...',
+      CREATE_COMMENT: 'コメントを追加中...',
+      CREATE_EVIDENCE: 'エビデンスをアップロード中...',
+    }
+    return messages[type] || '同期中...'
+  }
+
+  /**
+   * 特定タイプのCommandを実行
+   */
+  private async executeCommandsByType(
+    type: CommandType,
     result: SyncResult,
     onItemProcessed?: (count: number) => void
   ): Promise<void> {
-    const items = await syncQueueService.getPendingItemsByType(type)
+    const commands = await commandService.getPendingCommandsByType(type)
 
-    for (const item of items) {
+    for (const command of commands) {
       try {
-        await syncQueueService.updateStatus(item.id, 'syncing')
-        await this.pushSingleItem(item)
-        await syncQueueService.markAsSynced(item.id)
+        await commandService.updateStatus(command.id, 'executing')
+        await this.executeCommand(command)
+        await commandService.markAsExecuted(command.id)
         result.syncedCount++
         onItemProcessed?.(1)
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-        await syncQueueService.updateStatus(item.id, 'failed', errorMessage)
+        await commandService.updateStatus(command.id, 'failed', errorMessage)
         result.failedCount++
-        result.errors.push(`${type}[${item.entityId}]: ${errorMessage}`)
-        console.error(`Error pushing ${type} ${item.entityId}:`, error)
+        result.errors.push(`${type}: ${errorMessage}`)
+        console.error(`Error executing ${type}:`, error)
         onItemProcessed?.(1)
       }
     }
   }
 
   /**
-   * 単一のキューアイテムを同期
+   * 単一のCommandを実行
    */
-  private async pushSingleItem(item: SyncQueueItem): Promise<void> {
-    const payload = item.payload as Record<string, unknown>
+  private async executeCommand(command: Command): Promise<void> {
+    const payload = command.payload as Record<string, unknown>
 
-    switch (item.type) {
-      case 'inspection':
+    switch (command.type) {
+      case 'CREATE_INSPECTION':
         await this.pushInspection(payload)
         break
-      case 'inspectionItem':
+      case 'UPDATE_INSPECTION_STATUS':
+        await this.pushInspectionStatusUpdate(payload)
+        break
+      case 'CREATE_INSPECTION_ITEM':
         await this.pushInspectionItem(payload)
         break
-      case 'result':
+      case 'UPDATE_INSPECTION_ITEM_STATUS':
+        await this.pushInspectionItemStatusUpdate(payload)
+        break
+      case 'CREATE_RESULT':
         await this.pushResult(payload)
         break
-      case 'comment':
+      case 'CREATE_COMMENT':
         await this.pushComment(payload)
         break
-      case 'evidence':
+      case 'CREATE_EVIDENCE':
         await this.pushEvidence(payload)
         break
     }
@@ -184,13 +204,28 @@ export class SyncService {
         title: payload.title,
         status: this.mapStatusToBackend(payload.status as string),
         description: payload.description,
-        createdAt: payload.createdAt,
+        createdAt: payload.createdAt, // ISO 8601 UTC形式（ローカルで発行済み）
         updatedAt: payload.updatedAt,
       }),
     })
 
     if (!response.ok && response.status !== 409) {
       throw new Error(`Failed to push inspection ${payload.id}`)
+    }
+  }
+
+  private async pushInspectionStatusUpdate(payload: Record<string, unknown>): Promise<void> {
+    const response = await this.fetchWithAuth(`${API_BASE_URL}/inspections/${payload.id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: this.mapStatusToBackend(payload.status as string),
+        updatedAt: payload.updatedAt, // ISO 8601 UTC形式（ローカルで発行済み）
+      }),
+    })
+
+    if (!response.ok && response.status !== 409) {
+      throw new Error(`Failed to update inspection status ${payload.id}`)
     }
   }
 
@@ -206,13 +241,28 @@ export class SyncService {
         areaId: payload.areaId,
         equipmentId: payload.equipmentId,
         status: this.mapStatusToBackend(payload.status as string),
-        createdAt: payload.createdAt,
+        createdAt: payload.createdAt, // ISO 8601 UTC形式（ローカルで発行済み）
         updatedAt: payload.updatedAt,
       }),
     })
 
     if (!response.ok && response.status !== 409) {
       throw new Error(`Failed to push inspection item ${payload.id}`)
+    }
+  }
+
+  private async pushInspectionItemStatusUpdate(payload: Record<string, unknown>): Promise<void> {
+    const response = await this.fetchWithAuth(`${API_BASE_URL}/inspections/items/${payload.id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: this.mapStatusToBackend(payload.status as string),
+        updatedAt: payload.updatedAt, // ISO 8601 UTC形式（ローカルで発行済み）
+      }),
+    })
+
+    if (!response.ok && response.status !== 409) {
+      throw new Error(`Failed to update inspection item status ${payload.id}`)
     }
   }
 
@@ -227,7 +277,7 @@ export class SyncService {
         note: payload.note,
         evidenceIds: payload.evidenceIds,
         createdBy: payload.createdBy,
-        createdAt: payload.createdAt,
+        createdAt: payload.createdAt, // ISO 8601 UTC形式（ローカルで発行済み）
       }),
     })
 
@@ -246,7 +296,7 @@ export class SyncService {
         content: payload.content,
         createdBy: payload.createdBy,
         isSystemComment: payload.isSystemComment,
-        createdAt: payload.createdAt,
+        createdAt: payload.createdAt, // ISO 8601 UTC形式（ローカルで発行済み）
       }),
     })
 
@@ -270,7 +320,7 @@ export class SyncService {
         fileSize: payload.fileSize,
         thumbnailPath: payload.thumbnailPath,
         s3Key: null, // TODO: S3アップロード後に設定
-        createdAt: payload.createdAt,
+        createdAt: payload.createdAt, // ISO 8601 UTC形式（ローカルで発行済み）
       }),
     })
 
@@ -280,17 +330,17 @@ export class SyncService {
   }
 
   /**
-   * 未同期アイテム数を取得
+   * 未実行Command数を取得
    */
   async getPendingCount(): Promise<number> {
-    return syncQueueService.getPendingCount()
+    return commandService.getPendingCount()
   }
 
   /**
-   * 失敗したアイテムをリセット
+   * 失敗したCommandをリセット
    */
   async resetFailedItems(): Promise<void> {
-    return syncQueueService.resetFailedItems()
+    return commandService.resetFailedCommands()
   }
 
   /**

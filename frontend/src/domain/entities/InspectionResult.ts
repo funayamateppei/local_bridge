@@ -5,7 +5,7 @@ export class InspectionResult {
   readonly inspectionItemId: string
   readonly verdict: InspectionVerdict
   readonly evidenceIds: string[]
-  readonly createdAt: number
+  readonly createdAt: string // ISO 8601 UTC形式（ローカルで発行）
   readonly createdBy: string
   readonly note?: string
 
@@ -14,7 +14,7 @@ export class InspectionResult {
     inspectionItemId: string,
     verdict: InspectionVerdict,
     evidenceIds: string[],
-    createdAt: number,
+    createdAt: string,
     createdBy: string,
     note?: string
   ) {

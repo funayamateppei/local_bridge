@@ -2,7 +2,7 @@ export class InspectionComment {
   readonly id: string
   readonly inspectionItemId: string
   readonly content: string
-  readonly createdAt: number
+  readonly createdAt: string // ISO 8601 UTC形式（ローカルで発行）
   readonly createdBy: string
   readonly isSystemComment?: boolean
 
@@ -10,7 +10,7 @@ export class InspectionComment {
     id: string,
     inspectionItemId: string,
     content: string,
-    createdAt: number,
+    createdAt: string,
     createdBy: string,
     isSystemComment?: boolean
   ) {

@@ -47,7 +47,7 @@ graph TD
     - `AuthRepositoryImpl` - 認証APIクライアントを使用した実装
   - **Services**:
     - `SyncService` - 同期処理
-    - `SyncQueueService` - 同期キュー管理
+    - `CommandService` - Commandキュー管理（操作ログの記録・実行）
   - **External Services**:
     - API クライアント(`src/infrastructure/api/client.ts`)
     - IndexedDB (Dexie) (`src/infrastructure/db.ts`)
@@ -90,6 +90,27 @@ graph TD
    - 不安定な接続での自動同期を避けるため、明示的な切り替えを採用
 3. **同期タイミング**: ユーザーが同期ボタンを押した時のみ実行
 
+### Command パターンによる同期
+
+ローカルでの操作は **Command（操作ログ）** として記録され、オンライン時にサーバーへ送信されます。
+
+```typescript
+// Command の定義
+interface Command {
+  id: string           // UUID
+  type: CommandType    // 'CREATE_INSPECTION', 'UPDATE_INSPECTION_STATUS', etc.
+  payload: unknown     // 操作内容
+  timestamp: string    // ISO 8601 UTC形式（ローカルで発行）
+  status: CommandStatus // 'pending' | 'executing' | 'failed'
+  retryCount: number
+}
+```
+
+**タイムスタンプ戦略**:
+- `createdAt` / `updatedAt` はローカルで UTC 形式で発行
+- 表示時に `toLocaleString()` でロケール変換
+- サーバーへはそのまま送信（サーバー側で再発行しない）
+
 **詳細な同期ロジックについては [SYNC_LOGIC.md](./SYNC_LOGIC.md) を参照してください。**
 
 ### Desktop vs Mobile アーキテクチャの違い
@@ -112,6 +133,7 @@ sequenceDiagram
     participant User
     participant UI
     participant SyncService
+    participant CommandQueue
     participant LocalDB
     participant API
 
@@ -119,9 +141,12 @@ sequenceDiagram
     User->>UI: 同期ボタンをクリック
     UI->>SyncService: 同期開始
 
-    SyncService->>LocalDB: ローカルの変更を取得
-    SyncService->>API: 変更をサーバーに送信
-    API-->>SyncService: 成功レスポンス
+    SyncService->>CommandQueue: pending Commandsを取得
+    loop Command種別ごと（依存順）
+        SyncService->>API: Command実行（POST）
+        API-->>SyncService: 成功レスポンス
+        SyncService->>CommandQueue: Command削除
+    end
 
     SyncService->>LocalDB: last_sync_at 取得
     SyncService->>API: サーバーからマスターデータ取得 (since=timestamp)
@@ -153,7 +178,8 @@ classDiagram
         id: UUID
         title: String
         status: Enum (todo, in_progress, done)
-        createdAt: Timestamp
+        createdAt: String (ISO 8601 UTC)
+        updatedAt: String (ISO 8601 UTC)
     }
 
     class InspectionItem {
@@ -163,6 +189,8 @@ classDiagram
         title: String
         status: Enum (todo, done)
         result: Enum (ok, ng)
+        createdAt: String (ISO 8601 UTC)
+        updatedAt: String (ISO 8601 UTC)
     }
 
     Inspection "1" -- "*" InspectionItem : contains
@@ -218,16 +246,16 @@ Task #123
 
 #### 2. InspectionTask Status: Last-Write-Wins (LWW)
 
-**方針**: タイムスタンプで最新を判定し、サーバーが最終的な真実を保持します。
+**方針**: ISO 8601 形式のタイムスタンプで最新を判定し、サーバーが最終的な真実を保持します。
 
 ```typescript
-// 同期時の処理
+// 同期時の処理（タイムスタンプは ISO 8601 文字列）
 if (serverTask.updatedAt > localTask.updatedAt) {
   // サーバーの方が新しい → ローカルを上書き
   await db.inspectionTasks.update(taskId, serverTask)
 } else if (localTask.updatedAt > serverTask.updatedAt) {
-  // ローカルの方が新しい → サーバーに送信
-  await api.updateTask(taskId, localTask)
+  // ローカルの方が新しい → Commandとして送信
+  await commandService.recordCommand('UPDATE_INSPECTION_STATUS', localTask)
 }
 ```
 
@@ -338,7 +366,7 @@ class Evidence {
   type: 'image' | 'video'
   filePath: string // OPFSでのファイルパス (例: '/evidence/550e8400-e29b-41d4.jpg')
   mimeType: string // 'image/jpeg', 'video/mp4'等
-  createdAt: number
+  createdAt: string // ISO 8601 UTC形式（ローカルで発行）
   fileSize?: number // ファイルサイズ(bytes)
   thumbnailPath?: string // サムネイルのパス(オプション)
 }
@@ -520,6 +548,7 @@ export class MobileInspectionRepositoryImpl implements IMobileInspectionReposito
     const id = uuidv4()
     const ext = file.name.split('.').pop()
     const filePath = `/evidence/${id}.${ext}`
+    const now = new Date().toISOString() // ローカルでUTC発行
 
     // OPFSに保存
     await this.opfs.saveFile(filePath, file)
@@ -531,11 +560,14 @@ export class MobileInspectionRepositoryImpl implements IMobileInspectionReposito
       file.type.startsWith('video') ? 'video' : 'image',
       filePath,
       file.type,
-      Date.now(),
+      now, // ISO 8601 UTC形式
       file.size
     )
 
     await this.db.evidences.add({ ...evidence })
+
+    // Commandとして記録
+    await commandService.recordCommand('CREATE_EVIDENCE', { ...evidence })
 
     return id
   }

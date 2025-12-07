@@ -12,7 +12,7 @@ import {
 import type { InspectionStatus } from '@/domain/types/inspection'
 import { v4 as uuidv4 } from 'uuid'
 import { opfsStorage } from '@/infrastructure/storage/opfs'
-import { syncQueueService } from '@/infrastructure/services/SyncQueueService'
+import { commandService } from '@/infrastructure/services/CommandService'
 
 export class MobileInspectionRepositoryImpl implements IMobileInspectionRepository {
   // Master Data
@@ -30,7 +30,7 @@ export class MobileInspectionRepositoryImpl implements IMobileInspectionReposito
   async createInspection(
     inspection: Omit<Inspection, 'id' | 'createdAt' | 'updatedAt'>
   ): Promise<string> {
-    const now = Date.now()
+    const now = new Date().toISOString() // ローカルでUTC発行
     const id = uuidv4()
     const newInspection = new Inspection(
       id,
@@ -43,8 +43,8 @@ export class MobileInspectionRepositoryImpl implements IMobileInspectionReposito
     // 1. 即座にローカルDBに保存（楽観的更新）
     await db.inspections.add({ ...newInspection })
 
-    // 2. 同期キューに追加（後で同期）
-    await syncQueueService.enqueue('inspection', id, { ...newInspection })
+    // 2. Commandを記録（後でサーバーに反映）
+    await commandService.recordCommand('CREATE_INSPECTION', { ...newInspection })
 
     return id
   }
@@ -73,7 +73,7 @@ export class MobileInspectionRepositoryImpl implements IMobileInspectionReposito
   async createInspectionItem(
     item: Omit<InspectionItem, 'id' | 'createdAt' | 'updatedAt'>
   ): Promise<void> {
-    const now = Date.now()
+    const now = new Date().toISOString() // ローカルでUTC発行
     const id = uuidv4()
     const newItem = new InspectionItem(
       id,
@@ -89,8 +89,8 @@ export class MobileInspectionRepositoryImpl implements IMobileInspectionReposito
     // 1. 即座にローカルDBに保存（楽観的更新）
     await db.inspectionItems.add({ ...newItem })
 
-    // 2. 同期キューに追加（後で同期）
-    await syncQueueService.enqueue('inspectionItem', id, { ...newItem })
+    // 2. Commandを記録（後でサーバーに反映）
+    await commandService.recordCommand('CREATE_INSPECTION_ITEM', { ...newItem })
   }
 
   async getItemsByInspectionId(inspectionId: string): Promise<InspectionItem[]> {
@@ -147,7 +147,7 @@ export class MobileInspectionRepositoryImpl implements IMobileInspectionReposito
 
   // Result & Evidence
   async submitResult(result: Omit<InspectionResult, 'id' | 'createdAt'>): Promise<void> {
-    const now = Date.now()
+    const now = new Date().toISOString() // ローカルでUTC発行
     const id = uuidv4()
     const newResult = new InspectionResult(
       id,
@@ -161,8 +161,8 @@ export class MobileInspectionRepositoryImpl implements IMobileInspectionReposito
     // 1. 即座にローカルDBに保存（楽観的更新）
     await db.inspectionResults.add({ ...newResult })
 
-    // 2. 同期キューに追加（後で同期）
-    await syncQueueService.enqueue('result', id, { ...newResult })
+    // 2. Commandを記録（後でサーバーに反映）
+    await commandService.recordCommand('CREATE_RESULT', { ...newResult })
 
     // Update item status
     await db.inspectionItems.update(result.inspectionItemId, {
@@ -170,10 +170,14 @@ export class MobileInspectionRepositoryImpl implements IMobileInspectionReposito
       updatedAt: now,
     })
 
-    // Item status update も同期キューに追加
+    // Item status update もCommandを記録
     const updatedItem = await db.inspectionItems.get(result.inspectionItemId)
     if (updatedItem) {
-      await syncQueueService.enqueue('inspectionItem', updatedItem.id, { ...updatedItem })
+      await commandService.recordCommand('UPDATE_INSPECTION_ITEM_STATUS', {
+        id: updatedItem.id,
+        status: updatedItem.status,
+        updatedAt: now,
+      })
     }
   }
 
@@ -181,7 +185,7 @@ export class MobileInspectionRepositoryImpl implements IMobileInspectionReposito
     evidence: Omit<Evidence, 'id' | 'createdAt' | 'filePath'>,
     file: Blob
   ): Promise<string> {
-    const now = Date.now()
+    const now = new Date().toISOString() // ローカルでUTC発行
     const id = uuidv4()
 
     // ファイル拡張子を取得
@@ -205,8 +209,8 @@ export class MobileInspectionRepositoryImpl implements IMobileInspectionReposito
     // 1. 即座にローカルDBに保存（楽観的更新）
     await db.evidences.add({ ...newEvidence })
 
-    // 2. 同期キューに追加（後で同期）
-    await syncQueueService.enqueue('evidence', id, { ...newEvidence })
+    // 2. Commandを記録（後でサーバーに反映）
+    await commandService.recordCommand('CREATE_EVIDENCE', { ...newEvidence })
 
     return id
   }
@@ -280,7 +284,7 @@ export class MobileInspectionRepositoryImpl implements IMobileInspectionReposito
 
   // Comment
   async addComment(comment: Omit<InspectionComment, 'id' | 'createdAt'>): Promise<void> {
-    const now = Date.now()
+    const now = new Date().toISOString() // ローカルでUTC発行
     const id = uuidv4()
     const newComment = new InspectionComment(
       id,
@@ -293,8 +297,8 @@ export class MobileInspectionRepositoryImpl implements IMobileInspectionReposito
     // 1. 即座にローカルDBに保存（楽観的更新）
     await db.inspectionComments.add({ ...newComment })
 
-    // 2. 同期キューに追加（後で同期）
-    await syncQueueService.enqueue('comment', id, { ...newComment })
+    // 2. Commandを記録（後でサーバーに反映）
+    await commandService.recordCommand('CREATE_COMMENT', { ...newComment })
   }
 
   async getCommentsByItemId(itemId: string): Promise<InspectionComment[]> {
@@ -314,33 +318,35 @@ export class MobileInspectionRepositoryImpl implements IMobileInspectionReposito
 
   // Status Update
   async updateItemStatus(itemId: string, status: InspectionStatus): Promise<void> {
-    const now = Date.now()
+    const now = new Date().toISOString() // ローカルでUTC発行
     // 1. 即座にローカルDBに保存（楽観的更新）
     await db.inspectionItems.update(itemId, {
       status,
       updatedAt: now,
     })
 
-    // 2. 同期キューに追加（後で同期）
-    const updatedItem = await db.inspectionItems.get(itemId)
-    if (updatedItem) {
-      await syncQueueService.enqueue('inspectionItem', itemId, { ...updatedItem })
-    }
+    // 2. Commandを記録（後でサーバーに反映）
+    await commandService.recordCommand('UPDATE_INSPECTION_ITEM_STATUS', {
+      id: itemId,
+      status,
+      updatedAt: now,
+    })
   }
 
   async updateInspectionStatus(inspectionId: string, status: InspectionStatus): Promise<void> {
-    const now = Date.now()
+    const now = new Date().toISOString() // ローカルでUTC発行
     // 1. 即座にローカルDBに保存（楽観的更新）
     await db.inspections.update(inspectionId, {
       status,
       updatedAt: now,
     })
 
-    // 2. 同期キューに追加（後で同期）
-    const updatedInspection = await db.inspections.get(inspectionId)
-    if (updatedInspection) {
-      await syncQueueService.enqueue('inspection', inspectionId, { ...updatedInspection })
-    }
+    // 2. Commandを記録（後でサーバーに反映）
+    await commandService.recordCommand('UPDATE_INSPECTION_STATUS', {
+      id: inspectionId,
+      status,
+      updatedAt: now,
+    })
   }
 }
 

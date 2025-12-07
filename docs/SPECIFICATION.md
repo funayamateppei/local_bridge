@@ -17,8 +17,8 @@ Local Bridge は、オフラインファーストで動作する設備点検（I
 ### 2.2 データフロー
 
 1. **Read**: UI は常にローカルの IndexedDB からデータを読み込んで表示する（爆速・オフライン対応）。
-2. **Write**: ユーザーの操作は IndexedDB に即時反映され、バックグラウンドで SyncService がサーバーへ送信する。
-3. **Sync**: 定期的またはユーザーの操作により、サーバーの最新データをローカルに取り込む。
+2. **Write**: ユーザーの操作は IndexedDB に即時反映され、同時に Command（操作ログ）として記録される。
+3. **Sync**: ユーザーの操作により、pending 状態の Command をサーバーへ送信し、サーバーの最新データをローカルに取り込む。
 
 ## 3. 機能仕様
 
@@ -48,10 +48,13 @@ Local Bridge は、オフラインファーストで動作する設備点検（I
 ### 3.4 同期 (Synchronization)
 
 - **戦略**: **Local-First / Eventual Consistency**
+- **Command パターン**: ローカルでの操作は「Command（操作ログ）」として記録し、オンライン時にサーバーへ送信。
+  - **タイムスタンプ**: `createdAt`/`updatedAt` はローカルで ISO 8601 UTC 形式で発行し、表示時にロケール変換。
+  - **実行順序**: エンティティの依存関係に基づき、CREATE → UPDATE の順で実行。
 - **Master Data**: サーバー → クライアントの一方向同期（Area, Equipment）。
   - **Incremental Sync**: タイムスタンプベースの差分同期を採用し、通信量を削減。
-- **Transaction Data**: 双方向同期。
-  - **Upstream**: ローカルの未送信データをサーバーへ POST。
+- **Transaction Data**: Command ベースの同期。
+  - **Upstream**: pending 状態の Command をサーバーへ POST。
   - **Downstream**: サーバーの更新データをローカルへ Fetch。
 - **Progress Visualization**: 同期処理の進捗（件数、パーセンテージ）を UI にリアルタイム表示。
 - **Conflict Resolution**: **Last Write Wins** (LWW) を基本とするが、ステータス遷移などはサーバー側のロジックで整合性を保つ。

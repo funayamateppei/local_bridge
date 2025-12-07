@@ -16,8 +16,8 @@ export interface Inspection {
   id: string
   title: string
   status: InspectionStatus
-  createdAt: number
-  updatedAt: number
+  createdAt: string // ISO 8601 UTC形式（ローカルで発行）
+  updatedAt: string // ISO 8601 UTC形式（ローカルで発行）
   description?: string
 }
 
@@ -29,8 +29,8 @@ export interface InspectionItem {
   areaId: string
   equipmentId: string
   status: InspectionStatus
-  createdAt: number
-  updatedAt: number
+  createdAt: string // ISO 8601 UTC形式（ローカルで発行）
+  updatedAt: string // ISO 8601 UTC形式（ローカルで発行）
 }
 
 export interface InspectionResult {
@@ -39,7 +39,7 @@ export interface InspectionResult {
   verdict: InspectionVerdict
   note?: string
   evidenceIds: string[] // 写真などのID
-  createdAt: number
+  createdAt: string // ISO 8601 UTC形式（ローカルで発行）
   createdBy: string // ユーザーID
 }
 
@@ -47,7 +47,7 @@ export interface InspectionComment {
   id: string
   inspectionItemId: string
   content: string
-  createdAt: number
+  createdAt: string // ISO 8601 UTC形式（ローカルで発行）
   createdBy: string // ユーザーID
   isSystemComment?: boolean // ステータス変更ログなど
 }
@@ -58,7 +58,7 @@ export interface Evidence {
   type: 'image' | 'video'
   filePath: string // OPFSでのファイルパス
   mimeType: string // 'image/jpeg', 'video/mp4' など
-  createdAt: number
+  createdAt: string // ISO 8601 UTC形式（ローカルで発行）
   fileSize?: number // ファイルサイズ(bytes)
   thumbnailPath?: string // サムネイルのパス(オプション)
 }

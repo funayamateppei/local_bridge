@@ -1,7 +1,7 @@
 <!--
 【記事のコンセプト】
 - プロダクト（点検アプリ）の機能紹介ではなく、「Local-First」というアーキテクチャパターンの実践的な解説記事。
-- 「待たせないUX」を実現するための技術的アプローチ（IndexedDB, OPFS, Dual Write, Clean Architecture）に焦点を当てる。
+- 「待たせないUX」を実現するための技術的アプローチ（IndexedDB, OPFS, Command Pattern, Clean Architecture）に焦点を当てる。
 - 読者が自身のプロジェクトでLocal-Firstを採用する際の判断材料や実装のヒントを提供することを目的とする。
 - UXそのもの（再検査フローなど）よりも、そのUXを支える「設計」を重視して記述する。
 -->
@@ -96,7 +96,7 @@ export class Evidence {
     public readonly type: "image" | "video",
     public readonly filePath: string, // OPFS上のパス
     public readonly mimeType: string,
-    public readonly createdAt: number
+    public readonly createdAt: string // ISO 8601 UTC形式（ローカルで発行）
   ) {}
 }
 
@@ -232,19 +232,61 @@ Safari の制限は注意が必要ですが、**PWA としてホーム画面に�
 
 ---
 
-## 5. Dual Write & Sync Queue 戦略
+## 5. Command パターンによる同期戦略
 
-オフライン時の操作を確実に記録し、かつユーザーの操作性を損なわないために、**Dual Write（二重書き込み）** 戦略を採用しました。
-これは、ユーザーのアクションに対して、以下の 2 つの保存処理を同時に行うものです。
+オフライン時の操作を確実に記録し、かつユーザーの操作性を損なわないために、**Command パターン（操作ログ形式）** を採用しました。
+
+### 従来の差分同期の課題
+
+従来の「差分同期」方式では、以下の課題がありました：
+
+- **順序管理の複雑さ**: FE で `syncOrder` などの順序情報を管理する必要がある
+- **差分計算のロジック**: 変更前後の状態を比較して差分を計算する必要がある
+- **タイムスタンプの依存**: サーバーでタイムスタンプを発行するため、オフライン時に正確な時刻が取れない
+
+### Command 方式の採用
+
+これらの課題を解決するため、**操作自体を Command として記録**する方式を採用しました。
+
+| 観点           | 差分同期（従来）         | Command 方式（採用）             |
+| -------------- | ------------------------ | -------------------------------- |
+| 順序管理       | FE で順序を管理          | 不要（timestamp 順に実行）       |
+| タイムスタンプ | サーバー発行             | **ローカルで UTC 発行**          |
+| 複雑さ         | 差分計算が必要           | 操作をそのまま記録               |
+| 再現性         | 差分マージが複雑         | Command 適用順で自然に解決       |
+| デバッグ       | 状態の差分から推測       | 操作履歴がそのまま残る           |
 
 ### 仕組み
 
 1.  **ローカルデータ本体 (IndexedDB) への書き込み**
     - 目的: **UI への即時反映 (Optimistic UI)**
     - 特徴: 常に最新の状態を保持します。ユーザーが画面で見るのはこのデータです。
-2.  **同期キュー (Sync Queue) への追加**
-    - 目的: **サーバー同期用ログの蓄積**
-    - 特徴: 「何を」「どの ID で」「どう変更したか」という操作ログを時系列順に保存します。
+2.  **Command Queue への追加**
+    - 目的: **サーバー同期用の操作ログ蓄積**
+    - 特徴: 「どの操作を」「どのデータで」「いつ実行したか」を記録。**timestamp はローカルで UTC 発行**。
+
+### Command の定義
+
+```typescript
+// 操作の種類を明示的に定義
+type CommandType =
+  | 'CREATE_INSPECTION'
+  | 'UPDATE_INSPECTION_STATUS'
+  | 'CREATE_INSPECTION_ITEM'
+  | 'UPDATE_INSPECTION_ITEM_STATUS'
+  | 'CREATE_RESULT'
+  | 'CREATE_COMMENT'
+  | 'CREATE_EVIDENCE'
+
+interface Command {
+  id: string
+  type: CommandType
+  payload: unknown // 操作対象のデータ
+  timestamp: string // ISO 8601 UTC形式（ローカルで発行）
+  status: 'pending' | 'executing' | 'failed'
+  retryCount: number
+}
+```
 
 ### データフロー
 
@@ -252,22 +294,96 @@ Safari の制限は注意が必要ですが、**PWA としてホーム画面に�
 graph TD
     User[ユーザー操作] -->|保存/更新| Repo[Repository Layer]
 
-    subgraph "Dual Write Process"
+    subgraph "Command Recording"
         Repo -->|1. 即時保存| LocalDB[ローカルデータ本体]
-        Repo -->|2. キュー追加| Queue[同期キュー]
+        Repo -->|2. Command記録| Queue[Command Queue]
     end
 
     LocalDB -->|データ参照| UI[画面表示]
     Queue -->|同期トリガー| Server[サーバーAPI]
 
     note1[UIは即座に更新されるため<br/>待ち時間ゼロ]
-    note2[オフラインの間<br/>ここに操作が溜まり続ける]
+    note2[オフラインの間<br/>Commandが溜まり続ける]
 
     UI -.- note1
     Queue -.- note2
 ```
 
+### タイムスタンプのローカル発行
+
+Command 方式の最大のメリットの一つは、**タイムスタンプをローカルで発行できる**点です。
+
+```typescript
+// Repository での実装例
+async createInspection(data: InspectionData): Promise<string> {
+  const now = new Date().toISOString() // ローカルでUTC発行
+  const id = uuidv4()
+
+  const inspection = {
+    id,
+    ...data,
+    createdAt: now,
+    updatedAt: now,
+  }
+
+  // 1. ローカルDBに即座に保存
+  await db.inspections.add(inspection)
+
+  // 2. Commandを記録
+  await commandService.recordCommand('CREATE_INSPECTION', inspection)
+
+  return id
+}
+```
+
+**ポイント**:
+- `timestamp` は `new Date().toISOString()` でローカル発行（サーバー不要）
+- UI 表示時は `toLocaleString()` でユーザーのタイムゾーンに変換
+- Command は実行完了後にキューから削除
+
 この設計により、**「UI は常にサクサク動きつつ、裏側で確実にサーバーへの送信待ち行列を作る」** ことが可能になります。
+
+### FE での順序管理が不要に
+
+Command パターンのもう一つの大きなメリットは、**フロントエンドで同期の順序を意識する必要がなくなる**点です。
+
+通常、エンティティ間には依存関係（親子関係）があります。例えば「InspectionItem は Inspection に属する」「Result は InspectionItem に属する」といった関係です。サーバーへデータを送信する際、親データが存在しないと外部キー制約でエラーになります。
+
+**Command パターンでは、種別ごとに実行順序を定義しておくだけで解決します**：
+
+```typescript
+// Repository: 操作を記録するだけ（順序を気にしない）
+await commandService.recordCommand('CREATE_INSPECTION', inspection)
+await commandService.recordCommand('CREATE_INSPECTION_ITEM', item)
+await commandService.recordCommand('CREATE_RESULT', result)
+
+// SyncService: 種別順に Command を実行するだけ
+const COMMAND_EXECUTION_ORDER: CommandType[] = [
+  'CREATE_INSPECTION',           // 親
+  'UPDATE_INSPECTION_STATUS',
+  'CREATE_INSPECTION_ITEM',      // 子
+  'UPDATE_INSPECTION_ITEM_STATUS',
+  'CREATE_RESULT',               // 孫
+  'CREATE_COMMENT',
+  'CREATE_EVIDENCE',
+]
+
+// 種別ごとに取得して実行
+for (const type of COMMAND_EXECUTION_ORDER) {
+  const commands = await commandService.getPendingCommandsByType(type)
+  for (const command of commands) {
+    await executeCommand(command)
+  }
+}
+```
+
+**この設計のメリット**:
+
+- **Repository**: 操作を記録するだけ。親子関係を意識しない
+- **SyncService**: 種別順に Command を実行するだけ。複雑なロジック不要
+- **順序の定義**: `COMMAND_EXECUTION_ORDER` 配列で一元管理
+
+フロントエンドは「何をしたか」を記録するだけ。同期時は種別順に実行するだけ。この単純さが Command パターンの本質的な価値です。
 
 ---
 
@@ -339,22 +455,32 @@ Local Bridge では、以下の戦略を採用しています：
 
 ### データの同期 (Synchronization)
 
-`SyncService` クラスが双方向の同期を管理します。
+`SyncService` クラスが Command の実行を管理します。
 
 #### 1. マスターデータ同期 (Server → Client)
 
 - 同期時にサーバーから全件取得し、ローカルの IndexedDB を洗い替え（Clear & BulkAdd）します。
 
-#### 2. トランザクションデータ同期 (Client ⇄ Server)
+#### 2. Command の実行 (Client → Server)
 
-- **Upstream (Client → Server)**:
+- **Command Queue からの取得**:
+  - `timestamp` 順に Command を取得します。
+  - 依存関係（親データ → 子データ）を考慮した種別順で処理されます。
 
-  - 同期キューに溜まった操作ログを順次送信します。
-  - 依存関係（親データ → 子データ）を考慮した順序で処理されます。
-  - Evidence（画像）は、メタデータを送信した後、S3 へのアップロード処理を行います（Presigned URL 利用）。
+- **実行順序**:
+  ```
+  1. CREATE_INSPECTION      (検査)
+  2. UPDATE_INSPECTION_STATUS
+  3. CREATE_INSPECTION_ITEM (検査項目)
+  4. UPDATE_INSPECTION_ITEM_STATUS
+  5. CREATE_RESULT          (結果)
+  6. CREATE_COMMENT         (コメント)
+  7. CREATE_EVIDENCE        (エビデンス)
+  ```
 
-- **Downstream (Server → Client)**:
-  - サーバー側で更新されたデータ（他のユーザーによる実施結果など）を取得し、ローカル DB にマージします。
+- **成功/失敗処理**:
+  - 成功: Command をキューから削除
+  - 失敗: `retryCount` をインクリメント（最大 3 回まで再試行）
 
 ### UI は「常に」IndexedDB を見る
 

@@ -4,16 +4,16 @@ export class Inspection {
   readonly id: string
   readonly title: string
   status: InspectionStatus
-  readonly createdAt: number
-  updatedAt: number
+  readonly createdAt: string // ISO 8601 UTC形式（ローカルで発行）
+  updatedAt: string // ISO 8601 UTC形式（ローカルで発行）
   readonly description?: string
 
   constructor(
     id: string,
     title: string,
     status: InspectionStatus,
-    createdAt: number,
-    updatedAt: number,
+    createdAt: string,
+    updatedAt: string,
     description?: string
   ) {
     this.id = id

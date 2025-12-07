@@ -4,11 +4,33 @@
 
 ## 目次
 
-1. [同期の全体フロー](#同期の全体フロー)
-2. [データ種別ごとの同期戦略](#データ種別ごとの同期戦略)
-3. [同期状態の管理](#同期状態の管理)
-4. [エラーハンドリング](#エラーハンドリング)
-5. [実装例](#実装例)
+1. [Command方式の概要](#command方式の概要)
+2. [同期の全体フロー](#同期の全体フロー)
+3. [Command の定義と種類](#commandの定義と種類)
+4. [タイムスタンプ戦略](#タイムスタンプ戦略)
+5. [エラーハンドリング](#エラーハンドリング)
+6. [実装例](#実装例)
+
+## Command方式の概要
+
+### 従来の差分同期との違い
+
+本アプリケーションでは、従来の「差分同期」ではなく **Command パターン（操作ログ形式）** を採用しています。
+
+| 観点           | 差分同期（従来）         | Command 方式（採用）             |
+| -------------- | ------------------------ | -------------------------------- |
+| 順序管理       | FE で順序を管理          | 不要（timestamp 順に実行）       |
+| タイムスタンプ | サーバー発行             | **ローカルで UTC 発行**          |
+| 複雑さ         | 差分計算が必要           | 操作をそのまま記録               |
+| 再現性         | 差分マージが複雑         | Command 適用順で自然に解決       |
+| デバッグ       | 状態の差分から推測       | 操作履歴がそのまま残る           |
+
+### Command方式のメリット
+
+1. **FEの責務がシンプル**: 操作を記録するだけで、順序管理不要
+2. **タイムスタンプをローカルで発行**: オフライン中も正確な時刻を記録可能
+3. **再現性**: 操作履歴がそのまま残り、デバッグしやすい
+4. **サーバー側もシンプル**: Commandを順番に実行するだけ
 
 ## 同期の全体フロー
 
@@ -28,641 +50,104 @@ sequenceDiagram
     participant User as ユーザー
     participant UI
     participant SyncService
+    participant CommandQueue as Command Queue
     participant LocalDB as IndexedDB
-    participant OPFS
     participant API as Backend API
 
     User->>UI: 同期ボタンをクリック
     UI->>SyncService: startSync()
 
-    Note over SyncService: Phase 1: ローカル→サーバー
-    SyncService->>LocalDB: 未同期データを取得
+    Note over SyncService: Phase 1: Command実行（ローカル→サーバー）
+    SyncService->>CommandQueue: 未実行Commandを取得
+    CommandQueue-->>SyncService: Command[] (timestamp順)
 
     rect rgb(200, 220, 250)
-        Note over SyncService,API: 点検結果の送信
-        loop 各未同期結果について
-            SyncService->>LocalDB: Evidenceメタデータ取得
-            loop 各Evidenceについて
-                SyncService->>OPFS: ファイル読み込み
-                SyncService->>API: ファイルアップロード
+        Note over SyncService,API: Command種別順に実行
+        loop 各Commandについて
+            SyncService->>SyncService: Command種別に応じた処理
+            SyncService->>API: APIリクエスト送信
+            API-->>SyncService: レスポンス
+            alt 成功
+                SyncService->>CommandQueue: Commandを削除
+            else 失敗
+                SyncService->>CommandQueue: retryCount++
             end
-            SyncService->>API: InspectionResult送信
-            SyncService->>LocalDB: sync_status更新
         end
     end
 
-    rect rgb(250, 220, 200)
-        Note over SyncService,API: コメントの送信
-        SyncService->>LocalDB: 未同期コメント取得
-        SyncService->>API: コメント送信
-        SyncService->>LocalDB: sync_status更新
-    end
-
-    Note over SyncService: Phase 2: サーバー→ローカル
+    Note over SyncService: Phase 2: マスターデータ取得（サーバー→ローカル）
 
     rect rgb(220, 250, 200)
         Note over SyncService,API: マスターデータ取得
         SyncService->>API: Area, Equipment取得
+        API-->>SyncService: マスターデータ
         SyncService->>LocalDB: ローカルDB更新
-    end
-
-    rect rgb(250, 250, 200)
-        Note over SyncService,API: タスク取得
-        SyncService->>API: InspectionTask取得
-        SyncService->>LocalDB: タスク更新(LWW)
-    end
-
-    rect rgb(250, 220, 250)
-        Note over SyncService,API: コメント取得
-        SyncService->>API: コメント取得
-        SyncService->>LocalDB: コメントマージ
     end
 
     SyncService-->>UI: 同期完了
     UI-->>User: 完了通知
 ```
 
-## データ種別ごとの同期戦略
+## Commandの定義と種類
 
-### 1. マスターデータ (Area, Equipment)
-
-**方向**: Server → Client (一方向)
-
-**戦略**: Full Replace (完全置き換え)
+### Command スキーマ
 
 ```typescript
-async syncMasterData(): Promise<void> {
-  // サーバーから最新のマスターデータを取得
-  const areas = await api.getAreas()
-  const equipments = await api.getEquipments()
+// 操作の種類を明示的に定義
+export type CommandType =
+  | 'CREATE_INSPECTION'
+  | 'UPDATE_INSPECTION_STATUS'
+  | 'CREATE_INSPECTION_ITEM'
+  | 'UPDATE_INSPECTION_ITEM_STATUS'
+  | 'CREATE_RESULT'
+  | 'CREATE_COMMENT'
+  | 'CREATE_EVIDENCE'
 
-  // ローカルDBを完全に置き換え
-  await db.transaction('rw', [db.areas, db.equipments], async () => {
-    await db.areas.clear()
-    await db.areas.bulkAdd(areas)
+export type CommandStatus = 'pending' | 'executing' | 'failed'
 
-    await db.equipments.clear()
-    await db.equipments.bulkAdd(equipments)
-  })
-
-  console.log(`✓ マスターデータ同期完了: ${areas.length}エリア, ${equipments.length}設備`)
+export interface Command {
+  id: string                // CommandのID（UUID）
+  type: CommandType         // 操作の種類
+  payload: unknown          // 操作対象のデータ
+  timestamp: string         // ISO 8601 UTC形式（ローカルで発行）
+  status: CommandStatus     // 実行状態
+  retryCount: number        // リトライ回数
+  lastAttemptAt?: number    // 最後の実行試行日時
+  errorMessage?: string     // エラーメッセージ
 }
 ```
 
-**理由**:
+### Command実行順序
 
-- マスターデータは管理者のみが変更
-- クライアント側での変更は想定しない
-- シンプルで確実
-
-### 2. InspectionTask
-
-**方向**: Server → Client (一方向)
-
-**戦略**: Last-Write-Wins (LWW) with Timestamp
-
-```typescript
-async syncTasks(): Promise<void> {
-  // サーバーから全タスクを取得
-  const serverTasks = await api.getTasks()
-
-  for (const serverTask of serverTasks) {
-    const localTask = await db.inspectionTasks.get(serverTask.id)
-
-    if (!localTask) {
-      // ローカルに存在しない → 新規追加
-      await db.inspectionTasks.add(serverTask)
-      console.log(`+ 新規タスク: ${serverTask.id}`)
-    } else if (serverTask.updatedAt > localTask.updatedAt) {
-      // サーバーの方が新しい → 上書き
-      await db.inspectionTasks.update(serverTask.id, serverTask)
-      console.log(`↻ タスク更新: ${serverTask.id} (${localTask.status} → ${serverTask.status})`)
-    } else if (localTask.updatedAt > serverTask.updatedAt) {
-      // ローカルの方が新しい → サーバーに送信
-      await api.updateTask(localTask.id, localTask)
-      console.log(`↑ タスク送信: ${localTask.id}`)
-    }
-    // updatedAtが同じ → 何もしない
-  }
-}
-```
-
-**注意点**:
-
-- タイムスタンプはクライアント生成のため、時刻のずれに注意
-- 重要な場合は楽観的ロック(`version`フィールド)を検討
-
-### 3. InspectionResult
-
-**方向**: Client → Server (一方向)
-
-**戦略**: Append-Only (追記のみ)
-
-```typescript
-async syncResults(): Promise<SyncStats> {
-  const stats = { sent: 0, failed: 0 }
-
-  // sync_status が 'pending' の結果を取得
-  const pendingResults = await db.inspectionResults
-    .where('sync_status')
-    .equals('pending')
-    .toArray()
-
-  for (const result of pendingResults) {
-    try {
-      // 1. Evidenceのアップロード
-      const evidences = await db.evidences
-        .where('resultId')
-        .equals(result.id)
-        .toArray()
-
-      const uploadedEvidenceIds: string[] = []
-
-      for (const evidence of evidences) {
-        // OPFSからファイル読み込み
-        const file = await opfs.getFile(evidence.filePath)
-
-        // サーバーにアップロード
-        const serverFileUrl = await api.uploadEvidence(file, {
-          resultId: result.id,
-          type: evidence.type,
-          mimeType: evidence.mimeType,
-        })
-
-        // Evidenceメタデータを更新(serverFileUrlを保存)
-        await db.evidences.update(evidence.id, {
-          serverFileUrl,
-          sync_status: 'synced',
-        })
-
-        uploadedEvidenceIds.push(evidence.id)
-      }
-
-      // 2. InspectionResultの送信
-      await api.createInspectionResult({
-        ...result,
-        evidenceIds: uploadedEvidenceIds,
-      })
-
-      // 3. sync_statusを更新
-      await db.inspectionResults.update(result.id, {
-        sync_status: 'synced',
-        syncedAt: Date.now(),
-      })
-
-      stats.sent++
-      console.log(`✓ 結果送信完了: ${result.id}`)
-
-    } catch (error) {
-      // エラー時はstatusを'error'に
-      await db.inspectionResults.update(result.id, {
-        sync_status: 'error',
-        syncError: error.message,
-      })
-
-      stats.failed++
-      console.error(`✗ 結果送信失敗: ${result.id}`, error)
-    }
-  }
-
-  return stats
-}
-```
-
-**重要**:
-
-- 一度送信した結果は再送信しない(`sync_status: 'synced'`)
-- エラー時は`sync_status: 'error'`にして、ユーザーに通知
-- Evidenceを先にアップロードしてから、Resultを送信
-
-### 4. InspectionComment
-
-**方向**: Bi-directional (双方向)
-
-**戦略**: Merge by ID (IDでマージ)
-
-```typescript
-async syncComments(): Promise<void> {
-  // Phase 1: ローカル → サーバー
-  const localComments = await db.inspectionComments.toArray()
-  const unsyncedComments = localComments.filter(c => c.sync_status === 'pending')
-
-  for (const comment of unsyncedComments) {
-    try {
-      await api.createComment(comment)
-      await db.inspectionComments.update(comment.id, {
-        sync_status: 'synced',
-      })
-      console.log(`↑ コメント送信: ${comment.id}`)
-    } catch (error) {
-      console.error(`✗ コメント送信失敗: ${comment.id}`, error)
-    }
-  }
-
-  // Phase 2: サーバー → ローカル
-  const serverComments = await api.getComments()
-  const localCommentIds = new Set(localComments.map(c => c.id))
-
-  const newComments = serverComments.filter(c => !localCommentIds.has(c.id))
-
-  if (newComments.length > 0) {
-    await db.inspectionComments.bulkAdd(
-      newComments.map(c => ({
-        ...c,
-        sync_status: 'synced',
-      }))
-    )
-    console.log(`↓ 新規コメント受信: ${newComments.length}件`)
-  }
-}
-```
-
-**理由**:
-
-- UUIDによりID衝突は発生しない
-- 両方のコメントを保持することで情報が失われない
-
-### 5. Evidence (ファイル)
-
-**方向**: Client → Server (一方向)
-
-**戦略**: Upload Once, Keep Metadata
-
-```typescript
-async uploadEvidence(
-  file: File,
-  metadata: {
-    resultId: string
-    type: 'image' | 'video'
-    mimeType: string
-  }
-): Promise<string> {
-  // 1. Presigned URLを取得
-  const { uploadUrl, fileUrl } = await api.getPresignedUrl({
-    fileName: `${uuidv4()}.${file.name.split('.').pop()}`,
-    contentType: file.type,
-  })
-
-  // 2. S3などに直接アップロード
-  await fetch(uploadUrl, {
-    method: 'PUT',
-    body: file,
-    headers: {
-      'Content-Type': file.type,
-    },
-  })
-
-  // 3. サーバーのファイルURLを返す
-  return fileUrl
-}
-```
-
-**OPFS管理**:
-
-```typescript
-// オプション1: 同期成功後、OPFSファイルを削除(省スペース)
-async cleanupSyncedEvidences(): Promise<void> {
-  const syncedEvidences = await db.evidences
-    .where('sync_status')
-    .equals('synced')
-    .toArray()
-
-  for (const evidence of syncedEvidences) {
-    try {
-      await opfs.deleteFile(evidence.filePath)
-      console.log(`🗑 OPFS削除: ${evidence.filePath}`)
-    } catch (error) {
-      console.warn(`OPFS削除失敗: ${evidence.filePath}`, error)
-    }
-  }
-}
-
-// オプション2: 保持(オフライン時の再表示用)
-// → 何もしない
-```
-
-## 同期状態の管理
-
-### sync_status フィールド
-
-各エンティティに`sync_status`フィールドを追加:
-
-```typescript
-type SyncStatus = 'pending' | 'synced' | 'error'
-
-interface InspectionResult {
-  // ... 他のフィールド
-  sync_status: SyncStatus
-  syncedAt?: number // 同期完了日時
-  syncError?: string // エラーメッセージ
-}
-```
-
-### IndexedDBスキーマ更新
-
-```typescript
-this.version(4).stores({
-  inspectionResults: 'id, taskId, sync_status, syncedAt',
-  inspectionComments: 'id, taskId, sync_status',
-  evidences: 'id, resultId, sync_status',
-})
-```
-
-## エラーハンドリング
-
-### リトライ戦略
-
-```typescript
-async syncWithRetry(maxRetries = 3): Promise<void> {
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      await this.sync()
-      return // 成功
-    } catch (error) {
-      console.error(`同期失敗 (試行 ${attempt}/${maxRetries}):`, error)
-
-      if (attempt === maxRetries) {
-        // 最終試行も失敗
-        throw new Error(`同期に失敗しました: ${error.message}`)
-      }
-
-      // 指数バックオフ
-      const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000)
-      await new Promise(resolve => setTimeout(resolve, delay))
-    }
-  }
-}
-```
-
-### 部分的な失敗
-
-```typescript
-async sync(): Promise<SyncResult> {
-  const result: SyncResult = {
-    success: true,
-    masterData: { success: false },
-    tasks: { success: false },
-    results: { success: false, sent: 0, failed: 0 },
-    comments: { success: false, sent: 0, received: 0 },
-  }
-
-  try {
-    await this.syncMasterData()
-    result.masterData.success = true
-  } catch (error) {
-    console.error('マスターデータ同期失敗:', error)
-    result.success = false
-  }
-
-  try {
-    await this.syncTasks()
-    result.tasks.success = true
-  } catch (error) {
-    console.error('タスク同期失敗:', error)
-    result.success = false
-  }
-
-  try {
-    const stats = await this.syncResults()
-    result.results = { success: true, ...stats }
-  } catch (error) {
-    console.error('結果同期失敗:', error)
-    result.success = false
-  }
-
-  try {
-    const stats = await this.syncComments()
-    result.comments = { success: true, ...stats }
-  } catch (error) {
-    console.error('コメント同期失敗:', error)
-    result.success = false
-  }
-
-  return result
-}
-```
-
-## 実装例
-
-### SyncService クラス
-
-```typescript
-export class SyncService {
-  constructor(
-    private db: LocalBridgeDatabase,
-    private opfs: OPFSStorage,
-    private api: APIClient
-  ) {}
-
-  async sync(): Promise<SyncResult> {
-    console.log('🔄 同期開始...')
-    const startTime = Date.now()
-
-    const result = await this.syncWithRetry()
-
-    const duration = Date.now() - startTime
-    console.log(`✓ 同期完了 (${duration}ms)`)
-
-    return result
-  }
-
-  private async syncWithRetry(maxRetries = 3): Promise<SyncResult> {
-    // ... リトライロジック
-  }
-
-  private async syncMasterData(): Promise<void> {
-    // ... マスターデータ同期
-  }
-
-  private async syncTasks(): Promise<void> {
-    // ... タスク同期
-  }
-
-  private async syncResults(): Promise<SyncStats> {
-    // ... 結果同期
-  }
-
-  private async syncComments(): Promise<CommentSyncStats> {
-    // ... コメント同期
-  }
-}
-```
-
-### 使用例
-
-```typescript
-// Zustand Store
-interface SyncStore {
-  isSyncing: boolean
-  lastSyncResult: SyncResult | null
-  sync: () => Promise<void>
-}
-
-export const useSyncStore = create<SyncStore>((set, get) => ({
-  isSyncing: false,
-  lastSyncResult: null,
-
-  sync: async () => {
-    set({ isSyncing: true })
-
-    try {
-      const syncService = new SyncService(db, opfs, api)
-      const result = await syncService.sync()
-
-      set({ lastSyncResult: result })
-
-      // 通知
-      if (result.success) {
-        toast.success('同期が完了しました')
-      } else {
-        toast.warning('一部のデータの同期に失敗しました')
-      }
-    } catch (error) {
-      toast.error(`同期に失敗しました: ${error.message}`)
-    } finally {
-      set({ isSyncing: false })
-    }
-  },
-}))
-```
-
-### UI コンポーネント
-
-```tsx
-export const SyncButton: React.FC = () => {
-  const { isSyncing, lastSyncResult, sync } = useSyncStore()
-
-  return (
-    <div>
-      <button onClick={sync} disabled={isSyncing} className="btn btn-primary">
-        {isSyncing ? (
-          <>
-            <Loader className="animate-spin" />
-            同期中...
-          </>
-        ) : (
-          <>
-            <RefreshCw />
-            同期
-          </>
-        )}
-      </button>
-
-      {lastSyncResult && (
-        <div className="mt-2 text-sm">
-          <p>✓ {lastSyncResult.results.sent}件の結果を送信</p>
-          <p>✓ {lastSyncResult.comments.received}件のコメントを受信</p>
-          {lastSyncResult.results.failed > 0 && (
-            <p className="text-red-500">✗ {lastSyncResult.results.failed}件の送信に失敗</p>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-```
-
-## 同期キューによる永続化
-
-### オフライン時のデータ保存メカニズム (Dual Write)
-
-本アプリケーションでは、オフライン時（および未同期時）の操作を確実に記録し、かつユーザーの操作性を損なわないために、**Dual Write（二重書き込み）** 戦略を採用しています。
-ユーザーがデータを保存・更新した際、システムは以下の2箇所に対して同時に（連続して）データを保存します。
-
-#### 1. ローカルデータ本体 (IndexedDB: 各エンティティテーブル)
-
-- **保存先**: `inspections`, `results`, `comments`, `evidences` などのテーブル
-- **役割**: **画面表示用（UIへの即時反映）**
-- **特徴**:
-  - 常に「最新の状態」を保持します（上書き更新）。
-  - ユーザーが画面で見るのはこのデータです。
-  - これにより、オフラインであってもユーザーは待機時間なく、サクサクと操作を続けることができます（Optimistic UI / 楽観的UI）。
-
-#### 2. 同期キュー (IndexedDB: syncQueueテーブル)
-
-- **保存先**: `syncQueue` テーブル
-- **役割**: **サーバー同期用（操作ログの蓄積）**
-- **特徴**:
-  - ここが「溜まっていくレコード」に該当します。
-  - 「何を(Entity)」「どのIDで」「どう変更したか(Payload)」という操作ログが、実行された順序で積み上がっていきます（追記）。
-  - サーバーへの送信待ち行列として機能します。
-
-### データフロー詳細
-
-```mermaid
-graph TD
-    User[ユーザー操作] -->|保存/更新| Repo[Repository Layer]
-
-    subgraph "Dual Write Process"
-        Repo -->|1. 即時保存| LocalDB[ローカルデータ本体<br/>(inspections, results等)]
-        Repo -->|2. キュー追加| Queue[同期キュー<br/>(syncQueue)]
-    end
-
-    LocalDB -->|データ参照| UI[画面表示]
-    Queue -->|手動同期トリガー| Server[サーバーAPI]
-
-    note1[UIは即座に更新されるため<br/>ユーザーは待ち時間ゼロ]
-    note2[オフラインの間<br/>ここに操作が溜まり続ける]
-
-    UI -.- note1
-    Queue -.- note2
-```
-
-### アーキテクチャ比較
+依存関係を考慮し、以下の順序で実行します:
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                        データフロー比較                                   │
-├──────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  【従来の同期（同期待ち）】                                                │
-│                                                                          │
-│    User Input ──► API Request ──► Wait... ──► Response ──► Update UI     │
-│                        │                          │                      │
-│                        └────── ネットワーク遅延 ───┘                      │
-│                                (100ms〜数秒)                              │
-│                                                                          │
-├──────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  【Local-First (Dual Write)】                                            │
-│                                                                          │
-│    User Input ──┬──► Local DB (本体) ──► Update UI (即座に反映)           │
-│                 │    (最新状態の保持)                                      │
-│                 │                                                        │
-│                 └──► Sync Queue (キュー) ──► 後でサーバーへ送信             │
-│                      (操作ログの蓄積)                                      │
-│                                                                          │
-│    ※ オフライン時はキューにレコードが溜まり続け、                               │
-│       オンライン切り替え時にまとめて処理されます。                              │
-│                                                                          │
-└──────────────────────────────────────────────────────────────────────────┘
-```
-
-### SyncQueueItem スキーマ
-
-```typescript
-export type SyncQueueItemType = 'inspection' | 'inspectionItem' | 'result' | 'comment' | 'evidence'
-
-export type SyncQueueStatus = 'pending' | 'syncing' | 'failed'
-
-export interface SyncQueueItem {
-  id: string // キューアイテムのID（UUID）
-  type: SyncQueueItemType // エンティティの種類
-  entityId: string // 対象エンティティのID
-  payload: unknown // 同期するデータの全体
-  status: SyncQueueStatus // 同期状態
-  retryCount: number // リトライ回数
-  createdAt: number // キュー追加日時
-  lastAttemptAt?: number // 最後の同期試行日時
-  errorMessage?: string // エラーメッセージ
-}
+1. CREATE_INSPECTION           (検査作成)
+       │
+       ▼
+2. UPDATE_INSPECTION_STATUS    (検査ステータス更新)
+       │
+       ▼
+3. CREATE_INSPECTION_ITEM      (検査項目作成)
+       │
+       ▼
+4. UPDATE_INSPECTION_ITEM_STATUS (項目ステータス更新)
+       │
+       ▼
+5. CREATE_RESULT               (結果登録)
+       │
+       ▼
+6. CREATE_COMMENT              (コメント追加)
+       │
+       ▼
+7. CREATE_EVIDENCE             (エビデンス追加)
 ```
 
 ### 状態遷移
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│                       同期キューの状態遷移                                │
+│                       Commandの状態遷移                                   │
 └──────────────────────────────────────────────────────────────────────────┘
 
                               ┌─────────┐
@@ -671,9 +156,9 @@ export interface SyncQueueItem {
                                    │
                                    │ sync() 実行
                                    ▼
-                              ┌─────────┐
-                              │ syncing │ ◄── 同期処理中
-                              └────┬────┘
+                              ┌───────────┐
+                              │ executing │ ◄── 実行中
+                              └────┬──────┘
                                    │
                     ┌──────────────┴──────────────┐
                     │                             │
@@ -696,79 +181,227 @@ export interface SyncQueueItem {
 MAX_RETRY_COUNT = 3
 ```
 
-### 同期順序
+## タイムスタンプ戦略
 
-依存関係を考慮し、以下の順序で同期を実行します:
+### ローカルでUTC発行
 
-```
-1. inspection      (検査)
-       │
-       ▼
-2. inspectionItem  (検査項目) ── inspectionId で紐付け
-       │
-       ▼
-3. result          (検査結果) ── inspectionItemId で紐付け
-       │
-       ▼
-4. comment         (コメント) ── inspectionItemId で紐付け
-       │
-       ▼
-5. evidence        (証跡)     ── resultId で紐付け
-```
-
-### SyncQueueService 実装
+Command方式の最大のメリットの一つは、**タイムスタンプをローカルで発行できる**点です。
 
 ```typescript
-export class SyncQueueService {
-  private readonly MAX_RETRY_COUNT = 3
+// すべてのタイムスタンプはISO 8601 UTC形式で発行
+const now = new Date().toISOString()
+// 例: "2025-12-07T10:30:00.000Z"
+```
 
+### なぜローカル発行か？
+
+1. **オフライン対応**: サーバーに接続できなくても正確な時刻を記録
+2. **順序保証**: タイムスタンプ順にCommandを実行すれば、操作順序が保証される
+3. **シンプル**: サーバーでタイムスタンプを発行する必要がない
+
+### UI表示時の変換
+
+```typescript
+// 保存時: UTC ISO形式
+const createdAt = new Date().toISOString()
+
+// 表示時: ユーザーのタイムゾーンに変換
+const displayTime = new Date(createdAt).toLocaleString()
+```
+
+## データフロー
+
+### Command記録プロセス
+
+```mermaid
+graph TD
+    User[ユーザー操作] -->|保存/更新| Repo[Repository Layer]
+
+    subgraph "Command Recording"
+        Repo -->|1. 即時保存| LocalDB[ローカルデータ本体<br/>(inspections, results等)]
+        Repo -->|2. Command記録| Queue[Command Queue<br/>(commandQueue)]
+    end
+
+    LocalDB -->|データ参照| UI[画面表示]
+    Queue -->|手動同期トリガー| Server[サーバーAPI]
+
+    note1[UIは即座に更新されるため<br/>ユーザーは待ち時間ゼロ]
+    note2[オフラインの間<br/>Commandが溜まり続ける]
+
+    UI -.- note1
+    Queue -.- note2
+```
+
+### アーキテクチャ比較
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                        データフロー比較                                   │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  【従来の同期（同期待ち）】                                                │
+│                                                                          │
+│    User Input ──► API Request ──► Wait... ──► Response ──► Update UI     │
+│                        │                          │                      │
+│                        └────── ネットワーク遅延 ───┘                      │
+│                                (100ms〜数秒)                              │
+│                                                                          │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  【Local-First (Command方式)】                                           │
+│                                                                          │
+│    User Input ──┬──► Local DB (本体) ──► Update UI (即座に反映)           │
+│                 │    (最新状態の保持)                                      │
+│                 │                                                        │
+│                 └──► Command Queue ──► 後でサーバーへ送信                  │
+│                      (操作ログの蓄積)                                      │
+│                                                                          │
+│    ※ オフライン時はCommandが溜まり続け、                                    │
+│       オンライン切り替え時にまとめて実行されます。                             │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+## エラーハンドリング
+
+### リトライ戦略
+
+```typescript
+const MAX_RETRY_COUNT = 3
+
+async executeCommand(command: Command): Promise<void> {
+  try {
+    await commandService.updateStatus(command.id, 'executing')
+
+    // Command種別に応じた処理
+    switch (command.type) {
+      case 'CREATE_INSPECTION':
+        await this.pushInspection(command.payload)
+        break
+      case 'CREATE_RESULT':
+        await this.pushResult(command.payload)
+        break
+      // ... 他のCommand種別
+    }
+
+    // 成功: キューから削除
+    await commandService.markAsExecuted(command.id)
+
+  } catch (error) {
+    // 失敗: retryCountをインクリメント
+    await commandService.updateStatus(command.id, 'failed', error.message)
+
+    if (command.retryCount >= MAX_RETRY_COUNT) {
+      console.error(`Command ${command.id} exceeded max retries`)
+    }
+  }
+}
+```
+
+### 部分的な失敗
+
+```typescript
+async pushLocalChanges(): Promise<SyncResult> {
+  const result: SyncResult = {
+    success: true,
+    syncedCount: 0,
+    failedCount: 0,
+    errors: [],
+  }
+
+  // Command種別ごとに実行（依存関係順）
+  for (const commandType of COMMAND_EXECUTION_ORDER) {
+    const commands = await commandService.getPendingCommandsByType(commandType)
+
+    for (const command of commands) {
+      try {
+        await this.executeCommand(command)
+        result.syncedCount++
+      } catch (error) {
+        result.failedCount++
+        result.errors.push(`${commandType}: ${error.message}`)
+      }
+    }
+  }
+
+  result.success = result.failedCount === 0
+  return result
+}
+```
+
+## 実装例
+
+### CommandService
+
+```typescript
+export class CommandService {
   /**
-   * 同期キューにアイテムを追加
+   * Commandを記録
    */
-  async enqueue(type: SyncQueueItemType, entityId: string, payload: unknown): Promise<string> {
-    const id = uuidv4()
-    await db.syncQueue.add({
-      id,
+  async recordCommand(type: CommandType, payload: unknown): Promise<string> {
+    const command: Command = {
+      id: uuidv4(),
       type,
-      entityId,
       payload,
+      timestamp: new Date().toISOString(), // ローカルでUTC発行
       status: 'pending',
       retryCount: 0,
-      createdAt: Date.now(),
-    })
-    return id
+    }
+    await db.commandQueue.add(command)
+    return command.id
   }
 
   /**
-   * 未同期アイテムを取得
+   * 実行待ちのCommandを取得（timestamp順）
    */
-  async getPendingItems(): Promise<SyncQueueItem[]> {
-    return db.syncQueue
+  async getPendingCommands(): Promise<Command[]> {
+    return db.commandQueue
       .where('status')
       .anyOf(['pending', 'failed'])
-      .filter((item) => item.retryCount < this.MAX_RETRY_COUNT)
-      .toArray()
+      .and((cmd) => cmd.retryCount < MAX_RETRY_COUNT)
+      .sortBy('timestamp')
   }
 
   /**
-   * ステータス更新
+   * 特定タイプのCommandを取得
    */
-  async updateStatus(id: string, status: SyncQueueStatus, errorMessage?: string): Promise<void> {
-    await db.syncQueue.update(id, {
+  async getPendingCommandsByType(type: CommandType): Promise<Command[]> {
+    return db.commandQueue
+      .where('type')
+      .equals(type)
+      .and((cmd) => cmd.status !== 'executing' && cmd.retryCount < MAX_RETRY_COUNT)
+      .sortBy('timestamp')
+  }
+
+  /**
+   * Commandのステータスを更新
+   */
+  async updateStatus(
+    id: string,
+    status: CommandStatus,
+    errorMessage?: string
+  ): Promise<void> {
+    const updates: Partial<Command> = {
       status,
       lastAttemptAt: Date.now(),
-      ...(status === 'failed' && {
-        retryCount: (await db.syncQueue.get(id))!.retryCount + 1,
-        errorMessage,
-      }),
-    })
+    }
+
+    if (status === 'failed') {
+      const command = await db.commandQueue.get(id)
+      if (command) {
+        updates.retryCount = command.retryCount + 1
+        updates.errorMessage = errorMessage
+      }
+    }
+
+    await db.commandQueue.update(id, updates)
   }
 
   /**
-   * 同期完了後にキューから削除
+   * 実行完了したCommandを削除
    */
-  async markAsSynced(id: string): Promise<void> {
-    await db.syncQueue.delete(id)
+  async markAsExecuted(id: string): Promise<void> {
+    await db.commandQueue.delete(id)
   }
 }
 ```
@@ -778,22 +411,56 @@ export class SyncQueueService {
 ```typescript
 // MobileInspectionRepositoryImpl.ts
 
-async saveResult(result: InspectionResult): Promise<void> {
-  const newResult = {
-    id: uuidv4(),
-    ...result,
-    createdAt: Date.now(),
+async createInspection(data: InspectionData): Promise<string> {
+  const now = new Date().toISOString() // ローカルでUTC発行
+  const id = uuidv4()
+
+  const inspection = {
+    id,
+    ...data,
+    createdAt: now,
+    updatedAt: now,
   }
 
   // 1. 即座にローカルDBに保存（楽観的更新）
+  await db.inspections.add(inspection)
+
+  // 2. Commandを記録（後でサーバーに反映）
+  await commandService.recordCommand('CREATE_INSPECTION', inspection)
+
+  return id
+}
+
+async submitResult(result: ResultData): Promise<void> {
+  const now = new Date().toISOString()
+  const id = uuidv4()
+
+  const newResult = {
+    id,
+    ...result,
+    createdAt: now,
+  }
+
+  // 1. 即座にローカルDBに保存
   await db.inspectionResults.add(newResult)
 
-  // 2. 同期キューに追加（後で同期）
-  await syncQueueService.enqueue('result', newResult.id, newResult)
+  // 2. Commandを記録
+  await commandService.recordCommand('CREATE_RESULT', newResult)
+
+  // 3. Item statusの更新もCommandで記録
+  await db.inspectionItems.update(result.inspectionItemId, {
+    status: 'in_review',
+    updatedAt: now,
+  })
+  await commandService.recordCommand('UPDATE_INSPECTION_ITEM_STATUS', {
+    id: result.inspectionItemId,
+    status: 'in_review',
+    updatedAt: now,
+  })
 }
 ```
 
-### UI での未同期件数表示
+### UI での未実行Command数表示
 
 ```tsx
 // SyncButton.tsx
@@ -821,20 +488,19 @@ export const SyncButton = () => {
 ### 同期の原則
 
 1. **手動トリガー** - ユーザーが明示的に同期を開始
-2. **部分的な成功を許容** - 一部が失敗しても他は成功
-3. **リトライ** - 一時的なネットワークエラーに対応
-4. **透明性** - 同期結果をユーザーに明示
-5. **履歴保持** - すべてのデータを履歴として保持
+2. **Command記録** - 操作をそのままログとして記録
+3. **ローカルでタイムスタンプ発行** - UTC ISO形式で即座に発行
+4. **依存関係順に実行** - 親データ→子データの順序で処理
+5. **リトライ** - 一時的なネットワークエラーに対応（最大3回）
+6. **透明性** - 同期結果をユーザーに明示
 
 ### パフォーマンス考慮事項
 
-- **バッチ処理**: 複数のコメントをまとめて送信
-- **並列処理**: 独立したデータは並列で同期
+- **即時UI更新**: ローカルDBへの書き込みは即座に完了
+- **バックグラウンド同期**: APIリクエストはユーザー操作をブロックしない
 - **プログレス表示**: 長時間かかる場合は進捗を表示
-- **バックグラウンド処理**: Web Workerの活用を検討
 
 ### セキュリティ
 
 - **認証トークン**: すべてのAPI呼び出しに認証トークンを付与
-- **Presigned URL**: ファイルアップロードはPresigned URLを使用
 - **HTTPS**: すべての通信はHTTPSで暗号化

@@ -192,7 +192,7 @@ class Evidence {
   type: "image" | "video"
   filePath: string // OPFSでのファイルパス
   mimeType: string // 'image/jpeg', 'video/mp4'等
-  createdAt: number // タイムスタンプ
+  createdAt: string // ISO 8601 UTC形式（ローカルで発行）
 }
 ```
 
@@ -201,8 +201,35 @@ class Evidence {
 - メタデータ(id, type, mimeType 等)は IndexedDB に保存
 - 実ファイルは OPFS に保存し、`filePath`で参照
 - Base64 エンコードは使用しない(パフォーマンス重視)
+- **タイムスタンプはローカルで UTC 発行**（サーバー依存なし）
 
 ## 🔄 同期ロジック
+
+### Command 方式（操作ログ形式）
+
+本アプリケーションでは、従来の差分同期ではなく **Command パターン** を採用しています。
+
+#### 従来の差分同期との違い
+
+| 観点           | 差分同期（従来）         | Command 方式（採用）             |
+| -------------- | ------------------------ | -------------------------------- |
+| 順序管理       | FE で順序を管理          | 不要（timestamp 順に実行）       |
+| タイムスタンプ | サーバー発行             | **ローカルで UTC 発行**          |
+| 複雑さ         | 差分計算が必要           | 操作をそのまま記録               |
+| 再現性         | 差分マージが複雑         | Command 適用順で自然に解決       |
+
+#### Command の種類
+
+```typescript
+type CommandType =
+  | 'CREATE_INSPECTION'           // 検査作成
+  | 'UPDATE_INSPECTION_STATUS'    // 検査ステータス更新
+  | 'CREATE_INSPECTION_ITEM'      // 検査項目作成
+  | 'UPDATE_INSPECTION_ITEM_STATUS' // 項目ステータス更新
+  | 'CREATE_RESULT'               // 結果登録
+  | 'CREATE_COMMENT'              // コメント追加
+  | 'CREATE_EVIDENCE'             // エビデンス追加
+```
 
 ### 同期フロー
 
@@ -211,37 +238,30 @@ sequenceDiagram
     participant User as 点検者
     participant UI
     participant LocalDB as IndexedDB
-    participant OPFS
+    participant CommandQueue as Command Queue
     participant Sync as Sync Service
     participant API as Backend API
 
-    User->>UI: オンラインモードに切り替え
-    User->>UI: 同期ボタンをクリック
+    User->>UI: 点検結果を登録
+    UI->>LocalDB: 即座に保存（楽観的更新）
+    UI->>CommandQueue: CREATE_RESULT Command 記録
+    Note over CommandQueue: timestamp: UTC ISO形式<br/>（ローカルで発行）
 
+    User->>UI: 同期ボタンをクリック
     UI->>Sync: 同期開始
 
-    Sync->>LocalDB: 未同期の結果を取得
-    LocalDB-->>Sync: InspectionResult[]
+    Sync->>CommandQueue: 未実行 Command を取得
+    CommandQueue-->>Sync: Command[] (timestamp 順)
 
-    loop 各結果について
-        Sync->>LocalDB: Evidenceメタデータ取得
-        LocalDB-->>Sync: Evidence[]
-
-        loop 各Evidenceについて
-            Sync->>OPFS: ファイル読み込み(filePath)
-            OPFS-->>Sync: File/Blob
-            Sync->>API: ファイルアップロード
-            API-->>Sync: アップロード成功
-        end
-
-        Sync->>API: 点検結果送信
+    loop 各 Command について（依存関係順）
+        Sync->>API: Command を実行
         API-->>Sync: 成功レスポンス
-        Sync->>LocalDB: sync_statusを'synced'に更新
+        Sync->>CommandQueue: Command を削除
     end
 
     Sync->>API: マスターデータ取得
-    API-->>Sync: Area, Equipment, Task
-    Sync->>LocalDB: ローカルDB更新
+    API-->>Sync: Area, Equipment
+    Sync->>LocalDB: ローカル DB 更新
 
     Sync-->>UI: 同期完了
     UI-->>User: 完了通知表示
