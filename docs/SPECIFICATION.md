@@ -52,7 +52,7 @@ Local Bridge は、オフラインファーストで動作する設備点検（I
   - **タイムスタンプ**: `createdAt`/`updatedAt` はローカルで ISO 8601 UTC 形式で発行し、表示時にロケール変換。
   - **実行順序**: エンティティの依存関係に基づき、CREATE → UPDATE の順で実行。
 - **Master Data**: サーバー → クライアントの一方向同期（Area, Equipment）。
-  - **Incremental Sync**: タイムスタンプベースの差分同期を採用し、通信量を削減。
+  - **Incremental Sync**: タイムスタンプベースの増分取得を採用し、通信量を削減。
 - **Transaction Data**: Command ベースの同期。
   - **Upstream**: pending 状態の Command をサーバーへ POST。
   - **Downstream**: サーバーの更新データをローカルへ Fetch。

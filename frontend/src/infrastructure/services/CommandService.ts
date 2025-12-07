@@ -4,10 +4,9 @@ import { db, type Command, type CommandType, type CommandStatus } from '@/infras
 const MAX_RETRY_COUNT = 3
 
 /**
- * Command Service - 操作ログ形式でローカル操作を記録し、オンライン時にDBへ反映
+ * Command Service - 操作ログ形式でローカル操作を記録し、オンライン時にサーバーへ反映
  *
- * 従来の差分同期と異なり、操作自体をCommandとして記録する。
- * - FEで順序管理不要（timestamp順に実行）
+ * - FEで順序管理不要（親エンティティを気にせず記録、種別順で実行）
  * - createdAt/updatedAtはローカルでUTC発行
  * - サーバーはCommandを順番に適用するだけ
  */
